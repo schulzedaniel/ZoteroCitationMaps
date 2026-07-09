@@ -1,5 +1,9 @@
 # Citation Map for Zotero
 
+![Version](https://img.shields.io/badge/version-1.8.0-blue)
+![Zotero 7–9](https://img.shields.io/badge/Zotero-7%20%7C%208%20%7C%209-CC2936)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+
 An interactive citation network for your Zotero collections. Instead of a flat
 list of papers, you get a living map: every paper is a dot, every citation is
 an arrow, and the plugin tells you which important papers you are missing.
@@ -48,7 +52,8 @@ PNG and JSON export, and a local cache so rebuilding a map is instant.
 ## Installation
 
 1. Download the latest `citation-map-x.y.z.xpi` from the
-   [Releases](../../releases) page (or build it yourself, see below).
+   [Releases](https://github.com/schulzedaniel/ZoteroCitationMaps/releases)
+   page (or build it yourself, see below).
    *Firefox users:* right-click → "Save Link As…", otherwise Firefox tries to
    install the file into Firefox itself.
 2. In Zotero, go to **Tools → Plugins**.
@@ -128,9 +133,9 @@ and [`docs/INSTALL.md`](docs/INSTALL.md) for a development setup
 ## Building from source
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USERNAME/zotero-citation-map.git
-cd zotero-citation-map
-./scripts/build.sh          # → build/citation-map-1.0.0.xpi
+git clone https://github.com/schulzedaniel/ZoteroCitationMaps.git
+cd ZoteroCitationMaps/zotero-citation-map   # the plugin lives in this subfolder
+./scripts/build.sh                          # → build/citation-map-1.8.0.xpi
 ```
 
 No Node.js, no bundler, no dependencies — the plugin is plain JavaScript.
@@ -151,6 +156,18 @@ machine; there is no telemetry. All responses are cached locally.
 - Very large selections (1000+ items) work, but layout gets crowded —
   mapping per collection is the intended workflow.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the full version history
+(current release: **1.8.0**).
+
+## Author
+
+Created and maintained by **Daniel Schulze**
+([@schulzedaniel](https://github.com/schulzedaniel)). Bug reports and pull
+requests are welcome on the
+[project repository](https://github.com/schulzedaniel/ZoteroCitationMaps).
+
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT © 2026 Daniel Schulze — see [LICENSE](LICENSE).

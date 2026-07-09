@@ -3,8 +3,8 @@
     "citation-map@daniel.dev": {
       "updates": [
         {
-          "version": "1.0.0",
-          "update_link": "https://github.com/YOUR_GITHUB_USERNAME/zotero-citation-map/releases/download/v1.0.0/citation-map-1.0.0.xpi",
+          "version": "1.8.0",
+          "update_link": "https://github.com/schulzedaniel/ZoteroCitationMaps/releases/download/v1.8.0/citation-map-1.8.0.xpi",
           "update_hash": "sha256:REPLACE_WITH_XPI_SHA256",
           "applications": {
             "zotero": {

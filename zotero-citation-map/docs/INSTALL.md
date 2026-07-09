@@ -31,7 +31,7 @@ need to rebuild the XPI after each change:
    directory (the folder containing `manifest.json`), e.g.
 
    ```
-   /Users/daniel/code/zotero-citation-map/addon/
+   /path/to/ZoteroCitationMaps/zotero-citation-map/addon/
    ```
 
 4. In the profile's `prefs.js`, delete the lines containing
