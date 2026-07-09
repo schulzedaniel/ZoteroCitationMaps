@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Citation Map",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "Interactive citation network for your Zotero collections: visualize who cites whom, discover important papers you are missing, and trace citation chains through time.",
   "author": "Daniel Schulze",
   "homepage_url": "https://github.com/schulzedaniel/ZoteroCitationMaps",
