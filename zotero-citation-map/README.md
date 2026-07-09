@@ -13,6 +13,23 @@ Works with **Zotero 7, 8, and 9**.
 ![Concept: ivory dots are your papers, amber dots are suggestions, teal threads are citation chains]
 <!-- NOTE: keep your existing screenshot/image line here — the path was not visible when regenerating this file -->
 
+## ⬇️ Download & install
+
+[![Download the latest release](https://img.shields.io/badge/Download-latest%20release-CC2936?style=for-the-badge&logo=zotero&logoColor=white)](https://github.com/schulzedaniel/ZoteroCitationMaps/releases/latest)
+
+**Three steps, about 30 seconds — no account, nothing to configure:**
+
+1. **Click the red button above.** It always opens the newest release — grab
+   the `citation-map-*.xpi` file listed under **Assets**.
+   *Using Firefox?* Right-click the `.xpi` link → **"Save Link As…"**,
+   otherwise Firefox tries to install the file into itself.
+2. In Zotero, open **Tools → Plugins**.
+3. **Drag the downloaded `.xpi` onto the Plugins window** — or use the
+   gear (⚙) menu → **Install Plugin From File…** and pick the file.
+
+That's it. The plugin activates immediately; no restart needed. You can also
+[build it from source](#building-from-source).
+
 ## What it does
 
 **1. Draws a citation map.**
@@ -50,18 +67,6 @@ See [Trademarks & affiliation](#trademarks--affiliation) below.
 Also included: full-text search across titles/authors, a details panel with
 venue/author/citation stats, "Show in library" and "Open DOI" shortcuts,
 PNG and JSON export, and a local cache so rebuilding a map is instant.
-
-## Installation
-
-1. Download the latest `citation-map-x.y.z.xpi` from the
-   [Releases](https://github.com/schulzedaniel/ZoteroCitationMaps/releases)
-   page (or build it yourself, see below).
-   *Firefox users:* right-click → "Save Link As…", otherwise Firefox tries to
-   install the file into Firefox itself.
-2. In Zotero, go to **Tools → Plugins**.
-3. Drag the `.xpi` file onto the Plugins window
-   (or use the gear menu → **Install Plugin From File…**).
-4. Restart is not required — the plugin activates immediately.
 
 ## Usage
 
