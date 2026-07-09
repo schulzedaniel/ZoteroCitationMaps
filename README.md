@@ -1,6 +1,6 @@
 # Citation Map for Zotero
 
-![Version](https://img.shields.io/badge/version-1.8.0-blue)
+![Version](https://img.shields.io/badge/version-1.8.1-blue)
 ![Zotero 7–9](https://img.shields.io/badge/Zotero-7%20%7C%208%20%7C%209-CC2936)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
@@ -142,7 +142,7 @@ and [`docs/INSTALL.md`](docs/INSTALL.md) for a development setup
 ```bash
 git clone https://github.com/schulzedaniel/ZoteroCitationMaps.git
 cd ZoteroCitationMaps/zotero-citation-map   # the plugin lives in this subfolder
-./scripts/build.sh                          # → build/citation-map-1.8.0.xpi
+./scripts/build.sh                          # → build/citation-map-1.8.1.xpi
 ```
 
 No Node.js, no bundler, no dependencies — the plugin is plain JavaScript.
@@ -248,7 +248,7 @@ unambiguous for everyone.
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the full version history
-(current release: **1.8.0**).
+(current release: **1.8.1**).
 
 ## Author
 
