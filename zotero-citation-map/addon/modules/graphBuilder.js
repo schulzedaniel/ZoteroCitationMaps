@@ -60,14 +60,18 @@ this.GraphBuilder = {
       const key = "z" + item.id;
       if (nodes.has(key)) continue;
       if (record) {
-        nodes.set(key, this._node(key, "library", record, item.id));
+        const node = this._node(key, "library", record, item.id);
+        // The user's own metadata wins: OpenAlex's publication_year is
+        // often the early-online year, one off from the item's real date.
+        node.year = this._yearFromItem(item) || node.year;
+        nodes.set(key, node);
         oaToKey.set(record.id, key);
       } else {
         nodes.set(key, {
           key,
           kind: "unresolved",
           title: item.getField("title") || "(untitled)",
-          year: parseInt(item.getField("date")) || null,
+          year: this._yearFromItem(item),
           authors: [item.getField("firstCreator")].filter(Boolean),
           venue: item.getField("publicationTitle") || null,
           doi,
@@ -210,6 +214,26 @@ this.GraphBuilder = {
       inLibraryCitations: 0,
       references: record.references || [],
     };
+  },
+
+  /**
+   * Publication year of a Zotero item, parsed robustly. Zotero's Date field
+   * is free-form ("2020-05-01", "May 2020", "15/05/2020", …) — naive
+   * parseInt turned "15/05/2020" into year 15. Zotero's own date parser
+   * handles the common formats; a 4-digit-year regex catches the rest.
+   */
+  _yearFromItem(item) {
+    const raw = item.getField("date") || "";
+    if (!raw) return null;
+    try {
+      const parsed = Zotero.Date.strToDate(raw);
+      const y = parsed && parseInt(parsed.year, 10);
+      if (y && y > 1000) return y;
+    } catch (e) {
+      /* fall through to the regex */
+    }
+    const m = raw.match(/\b(1[0-9]{3}|2[0-9]{3})\b/);
+    return m ? parseInt(m[1], 10) : null;
   },
 
   /** Some workflows put the DOI in the Extra field ("DOI: 10.x/..."). */

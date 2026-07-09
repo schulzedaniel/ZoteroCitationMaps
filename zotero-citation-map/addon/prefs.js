@@ -27,6 +27,19 @@ pref("extensions.citation-map.cacheDays", 30);
 // Whether the in-map guide has been shown once (it auto-opens on first use).
 pref("extensions.citation-map.guideShown", false);
 
+// Whether the short first-run tour has been shown once (the "?" map button
+// reopens it anytime).
+pref("extensions.citation-map.tourShown", false);
+
+// Distance between papers on the map, in percent (the "Spacing" slider).
+pref("extensions.citation-map.nodeSpacing", 100);
+
+// Thickness of the citation lines, in percent (the "Lines" slider).
+pref("extensions.citation-map.edgeWidth", 100);
+
+// Which sidebar tab was last open: "suggested", "chains" or "papers".
+pref("extensions.citation-map.sideTab", "suggested");
+
 // How suggested papers appear on the map: "off", "top" (a few, teased) or "all".
 pref("extensions.citation-map.suggestDisplay", "top");
 

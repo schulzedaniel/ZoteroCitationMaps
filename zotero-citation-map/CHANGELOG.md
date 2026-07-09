@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- Two scale sliders in the toolbar: **Spacing** (distance between papers)
+  and **Lines** (thickness of the citation lines). Both are remembered
+  across sessions; double-click a slider to reset it to 100 %.
+- Timeline dates fixed. Papers are now dated from the Zotero item's own
+  Date field (parsed robustly — "May 2020", "15/05/2020" etc. all work)
+  instead of OpenAlex's publication year, which was often the early-online
+  year or plainly wrong.
+- The sidebar lists are now tabs — **Suggested / Chains / My papers** —
+  so each gets the full height. The new My papers tab lists everything in
+  the collection with its Zotero tags (colored tags keep their color),
+  note counts and a quick filter; clicking a paper highlights and centers
+  it on the map, and selecting a dot on the map highlights its row.
+- New short step-by-step tour (5 small cards, skippable) on first open,
+  replacing the full guide auto-open. The **?** button replays the tour
+  anytime and links to the full guide.
+- Button labels are now properly centered.
+
 ## 1.8.0
 
 - Smooth Timeline → Network transition. Switching back to the network no

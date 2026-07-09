@@ -50,6 +50,14 @@ this.GraphView = class {
       Zotero.Prefs.get("extensions.citation-map.suggestMinCiters", true) || 2;
     this.suggestTopCount =
       Zotero.Prefs.get("extensions.citation-map.suggestTopCount", true) || 4;
+    // user-tunable scales (percent), remembered across sessions:
+    // distance between papers and thickness of the citation lines
+    this.spacingPct =
+      parseInt(Zotero.Prefs.get("extensions.citation-map.nodeSpacing", true), 10) ||
+      100;
+    this.edgeWidthPct =
+      parseInt(Zotero.Prefs.get("extensions.citation-map.edgeWidth", true), 10) ||
+      100;
     this.selected = null; // node key
     this.hovered = null;
     this.activeChain = null; // array of keys
@@ -69,12 +77,13 @@ this.GraphView = class {
     this._dirty = true;
     this._animate();
 
-    // First ever map: open the guide once, so the colors/arrows/chains
-    // are explained before the user has to ask.
-    if (!Zotero.Prefs.get("extensions.citation-map.guideShown", true)) {
-      this._showGuide();
+    // First ever map: a very short step-by-step tour (skippable, and
+    // reopenable anytime via the "?" button, which also links to the
+    // full guide).
+    if (!Zotero.Prefs.get("extensions.citation-map.tourShown", true)) {
+      this._showTour();
       try {
-        Zotero.Prefs.set("extensions.citation-map.guideShown", true, true);
+        Zotero.Prefs.set("extensions.citation-map.tourShown", true, true);
       } catch (e) {
         /* pref write is best-effort */
       }
@@ -88,7 +97,7 @@ this.GraphView = class {
       this.ctx.subInfo &&
       this.ctx.subInfo.firstTime
     );
-    if (this._pendingScopeHint && !this._guide) {
+    if (this._pendingScopeHint && !this._guide && !this._tour) {
       this._pendingScopeHint = false;
       this._playScopeHint();
     }
@@ -113,8 +122,9 @@ this.GraphView = class {
     g.nodes.sort((a, b) => b.inLibraryCitations - a.inLibraryCitations);
 
     // Distances scale with collection size, so large graphs get room
-    // instead of piling up.
-    this.layoutScale = Math.max(1, Math.sqrt(g.nodes.length / 80));
+    // instead of piling up; the user's Spacing slider multiplies on top.
+    this.layoutScale =
+      Math.max(1, Math.sqrt(g.nodes.length / 80)) * (this.spacingPct / 100);
 
     g.nodes.forEach((n, i) => {
       // node radius: base + in-library citations (how central it is to YOU)
@@ -352,6 +362,82 @@ this.GraphView = class {
     this._applySuggestionVisibility();
   }
 
+  // ============================================================ scale sliders
+
+  /** Compact labelled range slider for the toolbar. */
+  _buildSlider(label, tip, min, max, value, onInput) {
+    const wrap = this._el("div", "zcm-ctl");
+    wrap.appendChild(this._el("span", "zcm-ctl-label", label));
+    const input = this._el("input", "zcm-slider");
+    input.setAttribute("type", "range");
+    input.setAttribute("min", String(min));
+    input.setAttribute("max", String(max));
+    input.setAttribute("title", tip);
+    input.value = String(value);
+    input.addEventListener("input", () => onInput(parseInt(input.value, 10)));
+    // double-click the slider to snap back to 100 %
+    input.addEventListener("dblclick", () => {
+      input.value = "100";
+      onInput(100);
+    });
+    wrap.appendChild(input);
+    return wrap;
+  }
+
+  /**
+   * Spacing slider: scale the distance between papers. Existing positions,
+   * anchors and remembered layouts are scaled proportionally (no re-layout,
+   * no scatter), then the simulation relaxes gently into the new spacing.
+   */
+  _setSpacing(pct) {
+    pct = Math.max(50, Math.min(250, Math.round(pct)));
+    if (pct === this.spacingPct) return;
+    const ratio = pct / this.spacingPct;
+    this.spacingPct = pct;
+    try {
+      Zotero.Prefs.set("extensions.citation-map.nodeSpacing", pct, true);
+    } catch (e) {
+      /* best-effort */
+    }
+    this.layoutScale *= ratio;
+    if (this._arena) this._arena *= ratio;
+    for (const n of this.graph.nodes) {
+      n.x *= ratio;
+      n.y *= ratio;
+      n.anchorX *= ratio;
+      n.anchorY *= ratio;
+      if (n._netX != null) {
+        n._netX *= ratio;
+        n._netY *= ratio;
+      }
+      if (n.tlx != null) {
+        n.tlx *= ratio;
+        n.tly *= ratio;
+      }
+    }
+    if (this.mode === "timeline") {
+      // scaled positions land almost exactly on the recomputed grid; the
+      // ease absorbs the small residual from the cell-size clamp
+      this._computeTimelineLayout();
+      this.alpha = 1;
+    } else if (!this._returning) {
+      this.alpha = Math.max(this.alpha || 0, 0.25); // relax, don't reshuffle
+    }
+    this._fitView();
+  }
+
+  /** Line-width slider: thickness of the citation lines and arrowheads. */
+  _setEdgeWidth(pct) {
+    pct = Math.max(40, Math.min(300, Math.round(pct)));
+    this.edgeWidthPct = pct;
+    try {
+      Zotero.Prefs.set("extensions.citation-map.edgeWidth", pct, true);
+    } catch (e) {
+      /* best-effort */
+    }
+    this._dirty = true;
+  }
+
   // ===================================================== subcollection scope
 
   /** Toolbar control showing / changing which subcollections are mapped. */
@@ -479,6 +565,28 @@ this.GraphView = class {
     sWrap.appendChild(sTog);
     bar.appendChild(sWrap);
 
+    // scale sliders: distance between papers, thickness of citation lines
+    bar.appendChild(
+      this._buildSlider(
+        "Spacing",
+        "Distance between papers (double-click to reset)",
+        50,
+        250,
+        this.spacingPct,
+        (v) => this._setSpacing(v)
+      )
+    );
+    bar.appendChild(
+      this._buildSlider(
+        "Lines",
+        "Thickness of the citation lines (double-click to reset)",
+        40,
+        300,
+        this.edgeWidthPct,
+        (v) => this._setEdgeWidth(v)
+      )
+    );
+
     // subcollection scope (only when a collection with subfolders is mapped)
     if (this.ctx && this.ctx.subInfo && this.ctx.changeScope) {
       bar.appendChild(this._buildScopeControl());
@@ -540,7 +648,7 @@ this.GraphView = class {
       ["+", "Zoom in", () => this._zoomBy(1.3)],
       ["−", "Zoom out", () => this._zoomBy(1 / 1.3)],
       ["⌂", "Fit the whole map into view", () => this._fitView()],
-      ["?", "How to read this map", () => this._showGuide()],
+      ["?", "Quick tour (with a link to the full guide)", () => this._showTour()],
     ]) {
       const b = this._el("button", "zcm-map-btn", label);
       b.setAttribute("title", tip);
@@ -562,7 +670,7 @@ this.GraphView = class {
       "zcm-status",
       `${s.items} items · ${s.resolved} resolved · ${s.edges} citation links · ` +
         `${s.discovered} suggested papers · scroll = zoom · drag = pan · ` +
-        `⌂ = fit view · ? = guide`
+        `⌂ = fit view · ? = tour`
     );
     root.appendChild(this.status);
 
@@ -586,6 +694,51 @@ this.GraphView = class {
     );
     side.appendChild(this.details);
 
+    // The lists live in tabs so each gets the space instead of stacking
+    // into one long scroll; the last-used tab is remembered.
+    const tabs = this._el("div", "zcm-tabs");
+    this._tabBtns = {};
+    this._tabPanels = {
+      suggested: this._buildSuggestedPanel(),
+      chains: this._buildChainsPanel(),
+      papers: this._buildPapersPanel(),
+    };
+    for (const [id, label] of [
+      ["suggested", "Suggested"],
+      ["chains", "Chains"],
+      ["papers", "My papers"],
+    ]) {
+      const b = this._el("button", "zcm-tab", label);
+      b.addEventListener("click", () => this._setSideTab(id));
+      this._tabBtns[id] = b;
+      tabs.appendChild(b);
+    }
+    side.appendChild(tabs);
+    for (const p of Object.values(this._tabPanels)) side.appendChild(p);
+
+    const saved = Zotero.Prefs.get("extensions.citation-map.sideTab", true);
+    this._setSideTab(this._tabPanels[saved] ? saved : "suggested", false);
+    return side;
+  }
+
+  _setSideTab(id, persist = true) {
+    this.sideTab = id;
+    for (const [k, b] of Object.entries(this._tabBtns)) {
+      b.classList.toggle("zcm-on", k === id);
+    }
+    for (const [k, p] of Object.entries(this._tabPanels)) {
+      p.style.display = k === id ? "" : "none";
+    }
+    if (persist) {
+      try {
+        Zotero.Prefs.set("extensions.citation-map.sideTab", id, true);
+      } catch (e) {
+        /* best-effort */
+      }
+    }
+  }
+
+  _buildSuggestedPanel() {
     // discovered papers
     const disc = this._el("div", "zcm-card");
     disc.appendChild(this._el("div", "zcm-card-head", "Suggested papers"));
@@ -671,9 +824,10 @@ this.GraphView = class {
       chips.appendChild(chip);
     }
     renderList();
-    side.appendChild(disc);
+    return disc;
+  }
 
-    // chains
+  _buildChainsPanel() {
     const ch = this._el("div", "zcm-card");
     ch.appendChild(this._el("div", "zcm-card-head", "Citation chains"));
     ch.appendChild(
@@ -767,8 +921,139 @@ this.GraphView = class {
       });
       ch.appendChild(row);
     });
-    side.appendChild(ch);
-    return side;
+    return ch;
+  }
+
+  /**
+   * "My papers": every paper of the mapped collection, newest first, with
+   * its Zotero tags and note count. Clicking a row selects the paper on
+   * the map (highlight ring + centered view + details card).
+   */
+  _buildPapersPanel() {
+    const card = this._el("div", "zcm-card");
+    card.appendChild(this._el("div", "zcm-card-head", "My papers"));
+    card.appendChild(
+      this._el(
+        "div",
+        "zcm-card-sub",
+        "Everything in this collection, with tags and notes. Click a paper " +
+          "to highlight it on the map."
+      )
+    );
+
+    // quick filter, local to this list (the toolbar search dims the map)
+    const filter = this._el("input", "zcm-search zcm-papers-filter");
+    filter.setAttribute("placeholder", "Filter by title, author or tag…");
+    card.appendChild(filter);
+
+    const list = this._el("div");
+    card.appendChild(list);
+    this._paperRows = new Map();
+
+    const papers = this.graph.nodes
+      .filter((n) => n.kind !== "discovered")
+      .sort(
+        (a, b) =>
+          (b.year || 0) - (a.year || 0) ||
+          (a.title || "").localeCompare(b.title || "")
+      );
+    if (!papers.length) {
+      list.appendChild(this._el("div", "zcm-empty", "No papers in this collection."));
+    }
+
+    for (const n of papers) {
+      // tags + note count straight from the Zotero item
+      let tags = [];
+      let noteCount = 0;
+      let libraryID = null;
+      try {
+        const item = n.zoteroItemID ? Zotero.Items.get(n.zoteroItemID) : null;
+        if (item) {
+          libraryID = item.libraryID;
+          tags = item.getTags().map((t) => t.tag);
+          noteCount = (item.getNotes() || []).length;
+        }
+      } catch (e) {
+        /* item gone or not loaded — show the row without extras */
+      }
+
+      const row = this._el("div", "zcm-row zcm-paper-row");
+      const meta = this._el("div", "zcm-row-meta");
+      meta.appendChild(this._el("span", "zcm-year", n.year || "—"));
+      if (n.kind === "unresolved") {
+        meta.appendChild(this._el("span", "zcm-paper-flag", "no citation data"));
+      }
+      if (noteCount) {
+        meta.appendChild(
+          this._el(
+            "span",
+            "zcm-paper-notes",
+            `✎ ${noteCount} note${noteCount > 1 ? "s" : ""}`
+          )
+        );
+      }
+      row.appendChild(meta);
+      row.appendChild(this._el("div", "zcm-row-title", n.title));
+      if (n.venue || n.authors?.length) {
+        const sub = this._el("div", "zcm-row-sub");
+        if (n.authors && n.authors.length) {
+          sub.appendChild(
+            this._el(
+              "span",
+              null,
+              n.authors.slice(0, 3).join(", ") +
+                (n.authors.length > 3 ? " et al." : "") +
+                (n.venue ? " · " : "")
+            )
+          );
+        }
+        if (n.venue) this._appendVenue(sub, n);
+        row.appendChild(sub);
+      }
+      if (tags.length) {
+        const tw = this._el("div", "zcm-paper-tags");
+        for (const t of tags.slice(0, 6)) {
+          const tagEl = this._el("span", "zcm-paper-tag", t);
+          // colored Zotero tags keep their color
+          try {
+            const c = Zotero.Tags.getColor(libraryID, t);
+            if (c && c.color) {
+              tagEl.style.borderColor = c.color;
+              tagEl.style.color = c.color;
+            }
+          } catch (e) {
+            /* neutral chip */
+          }
+          tw.appendChild(tagEl);
+        }
+        if (tags.length > 6) {
+          tw.appendChild(
+            this._el("span", "zcm-paper-tag", `+${tags.length - 6}`)
+          );
+        }
+        row.appendChild(tw);
+      }
+
+      row.addEventListener("click", () => this._select(n.key, true));
+      row._filterText = (
+        n.title +
+        " " +
+        (n.authors || []).join(" ") +
+        " " +
+        tags.join(" ")
+      ).toLowerCase();
+      this._paperRows.set(n.key, row);
+      list.appendChild(row);
+    }
+
+    filter.addEventListener("input", () => {
+      const q = filter.value.trim().toLowerCase();
+      for (const row of this._paperRows.values()) {
+        row.style.display = !q || row._filterText.includes(q) ? "" : "none";
+      }
+    });
+
+    return card;
   }
 
   _short(t) {
@@ -1203,7 +1488,9 @@ this.GraphView = class {
       return;
     }
     const maxR = nodes.reduce((m, n) => Math.max(m, n.r), 8);
-    const cell = 2 * maxR + 16; // grid cell — no two dots can overlap
+    // grid cell — no two dots can overlap at 100 %; the Spacing slider
+    // tightens or relaxes the grid (never below touching distance)
+    const cell = Math.max(2 * maxR + 4, (2 * maxR + 16) * (this.spacingPct / 100));
     const bandGap = cell * 0.75; // breathing room between year bands
 
     const byYear = new Map();
@@ -1436,6 +1723,7 @@ this.GraphView = class {
     // dense graphs get fainter edges so the dots stay in front
     const baseEdgeAlpha =
       activeEdges.length > 400 ? 0.18 : activeEdges.length > 150 ? 0.26 : 0.35;
+    const ew = this.edgeWidthPct / 100; // user's line-width slider
 
     ctx.save();
     ctx.translate(this.width / 2 + tx, this.height / 2 + ty);
@@ -1510,7 +1798,7 @@ this.GraphView = class {
       if (this.activeChain && !onChain) alpha = Math.min(alpha, 0.08);
       ctx.globalAlpha = onChain ? 0.95 : alpha;
       ctx.strokeStyle = onChain ? colors.chain : colors.edge;
-      ctx.lineWidth = (onChain ? 2.4 : 1.1) / k;
+      ctx.lineWidth = ((onChain ? 2.4 : 1.1) * ew) / k;
       ctx.setLineDash(onChain ? [7 / k, 5 / k] : []);
       ctx.lineDashOffset = onChain ? this.dashOffset / k : 0;
       ctx.beginPath();
@@ -1525,7 +1813,9 @@ this.GraphView = class {
       const ax = t.x - (dx / d) * (t.r + 4);
       const ay = t.y - (dy / d) * (t.r + 4);
       const ang = Math.atan2(dy, dx);
-      const sz = (onChain ? 7 : 5) / k;
+      // arrowheads grow with the line width, but gently (sqrt), so thick
+      // lines don't turn every arrow into a wedge
+      const sz = ((onChain ? 7 : 5) * Math.sqrt(ew)) / k;
       ctx.fillStyle = onChain ? colors.chain : colors.edge;
       ctx.beginPath();
       ctx.moveTo(ax, ay);
@@ -1807,12 +2097,154 @@ this.GraphView = class {
     this.selected = key;
     const node = key ? this.nodeByKey.get(key) : null;
     this._renderDetails(node);
+    // mirror the selection in the "My papers" list
+    if (this._paperRows) {
+      for (const [k, row] of this._paperRows) {
+        row.classList.toggle("zcm-active", k === key);
+      }
+    }
     if (node && center) {
       this.transform.x = -node.x * this.transform.k;
       this.transform.y = -node.y * this.transform.k;
       this._clampTransform();
     }
     this._dirty = true;
+  }
+
+  // ================================================================== tour
+
+  /**
+   * Very short step-by-step introduction: 5 small cards, Next/Back/Skip.
+   * Opens automatically the first time a map is shown; the "?" button
+   * brings it back anytime, and it links to the full guide.
+   */
+  _showTour() {
+    if (this._tour) return;
+    if (this._guide) this._closeGuide();
+
+    const steps = [
+      {
+        title: "Welcome to your Citation Map",
+        body:
+          "Every dot is a paper from this collection. The bigger the dot, " +
+          "the more often the other papers here cite it.",
+      },
+      {
+        title: "The colors",
+        legend: true,
+        body:
+          "Arrows point from the citing paper to the cited one — always " +
+          "backwards in time.",
+      },
+      {
+        title: "Getting around",
+        body:
+          "Scroll to zoom · drag the background to pan · click a dot for " +
+          "details · double-click it to open the paper. The ⌂ button fits " +
+          "everything back into view.",
+      },
+      {
+        title: "The sidebar",
+        body:
+          "On the right: Suggested lists papers you may be missing, Chains " +
+          "shows idea threads through time, and My papers is your collection " +
+          "with tags and notes. Click anything to highlight it on the map.",
+      },
+      {
+        title: "That's it!",
+        body:
+          "Press ? anytime to see this tour again — or open the full guide " +
+          "below for the details.",
+      },
+    ];
+
+    const ov = this._el("div", "zcm-guide-overlay");
+    const card = this._el("div", "zcm-tour");
+    const title = this._el("div", "zcm-tour-title");
+    const body = this._el("div", "zcm-tour-body");
+    const dots = this._el("div", "zcm-tour-dots");
+    steps.forEach(() => dots.appendChild(this._el("span", "zcm-tour-dot")));
+
+    const foot = this._el("div", "zcm-tour-foot");
+    const skip = this._el("button", "zcm-btn", "Skip");
+    const full = this._el("button", "zcm-btn", "Full guide");
+    const spacer = this._el("div", "zcm-spacer");
+    const back = this._el("button", "zcm-btn", "Back");
+    const next = this._el("button", "zcm-btn zcm-btn-primary", "Next");
+    foot.appendChild(skip);
+    foot.appendChild(full);
+    foot.appendChild(spacer);
+    foot.appendChild(back);
+    foot.appendChild(next);
+
+    let i = 0;
+    const render = () => {
+      const step = steps[i];
+      title.textContent = step.title;
+      body.textContent = "";
+      if (step.legend) {
+        const legend = this._el("div", "zcm-guide-legend");
+        for (const [cls, text] of [
+          ["zcm-dot-library", "a paper in your library"],
+          ["zcm-dot-discovered", "a suggested paper you don't have yet"],
+          ["zcm-dot-unresolved", "no citation data (usually a missing DOI)"],
+        ]) {
+          const li = this._el("div", "zcm-guide-legend-item");
+          li.appendChild(this._el("span", "zcm-dot " + cls));
+          li.appendChild(this._el("span", null, text));
+          legend.appendChild(li);
+        }
+        body.appendChild(legend);
+      }
+      body.appendChild(this._el("div", "zcm-guide-p", step.body));
+      [...dots.children].forEach((d, di) =>
+        d.classList.toggle("zcm-on", di === i)
+      );
+      back.style.visibility = i ? "visible" : "hidden";
+      skip.style.visibility = i < steps.length - 1 ? "visible" : "hidden";
+      next.textContent = i === steps.length - 1 ? "Done" : "Next";
+    };
+    back.addEventListener("click", () => {
+      if (i > 0) i--;
+      render();
+    });
+    next.addEventListener("click", () => {
+      if (i >= steps.length - 1) this._closeTour();
+      else {
+        i++;
+        render();
+      }
+    });
+    skip.addEventListener("click", () => this._closeTour());
+    full.addEventListener("click", () => {
+      // guide first, so a pending scope hint stays deferred until it closes
+      this._showGuide();
+      this._closeTour();
+    });
+    ov.addEventListener("click", (ev) => {
+      if (ev.target === ov) this._closeTour();
+    });
+
+    card.appendChild(title);
+    card.appendChild(body);
+    card.appendChild(dots);
+    card.appendChild(foot);
+    ov.appendChild(card);
+    this.stage.appendChild(ov);
+    this._tour = ov;
+    render();
+  }
+
+  _closeTour() {
+    if (this._tour && this._tour.parentNode) {
+      this._tour.parentNode.removeChild(this._tour);
+    }
+    this._tour = null;
+    // The tour was covering the toolbar; now show the deferred scope nudge.
+    if (this._pendingScopeHint && !this._guide) {
+      this._pendingScopeHint = false;
+      this._playScopeHint();
+    }
   }
 
   // ================================================================= guide

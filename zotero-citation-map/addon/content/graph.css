@@ -111,6 +111,11 @@
   padding: 5px 12px;
   cursor: pointer;
   font: inherit;
+  /* Zotero's chrome styles nudge button text off-center; pin it */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.3;
 }
 .zcm-toggle-btn.zcm-on {
   background: var(--zcm-panel-2);
@@ -157,6 +162,11 @@
   padding: 5px 11px;
   cursor: pointer;
   font: inherit;
+  /* Zotero's chrome styles nudge button text off-center; pin it */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.3;
 }
 .zcm-btn:hover {
   background: var(--zcm-panel-2);
@@ -421,6 +431,11 @@
   color: var(--zcm-text);
   font: 15px/1 -apple-system, "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
+  /* glyphs (+ − ⌂ ?) must sit dead-center in the square */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 .zcm-map-btn:hover {
   background: var(--zcm-panel-2);
@@ -468,6 +483,9 @@
   font: 10.5px ui-monospace, Menlo, Consolas, monospace;
   padding: 2px 10px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .zcm-chip:hover {
   border-color: var(--zcm-amber);
@@ -961,6 +979,141 @@
 }
 .zcm-scope-row.zcm-sel:hover {
   background: rgba(70, 211, 194, 0.18);
+}
+
+/* -------------------------------------------------------- scale sliders */
+
+.zcm-slider {
+  appearance: auto;
+  width: 78px;
+  margin: 0;
+  accent-color: var(--zcm-teal);
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------- sidebar tabs */
+
+.zcm-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  border: 1px solid var(--zcm-line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--zcm-panel-2);
+}
+
+.zcm-tab {
+  flex: 1 1 0;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--zcm-muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.zcm-tab:hover {
+  color: var(--zcm-text);
+}
+.zcm-tab.zcm-on {
+  background: var(--zcm-panel);
+  color: var(--zcm-text);
+  box-shadow: inset 0 -2px 0 var(--zcm-teal);
+}
+
+/* ------------------------------------------------------- my-papers panel */
+
+.zcm-papers-filter {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.zcm-paper-flag {
+  color: var(--zcm-slate);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.zcm-paper-notes {
+  color: var(--zcm-teal);
+  font-size: 10.5px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.zcm-paper-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.zcm-paper-tag {
+  border: 1px solid var(--zcm-line);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px;
+  color: var(--zcm-muted);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------ quick tour */
+
+.zcm-tour {
+  width: min(440px, 88%);
+  background: var(--zcm-panel);
+  border: 1px solid var(--zcm-line);
+  border-radius: 14px;
+  padding: 20px 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.zcm-tour-title {
+  font-family: Georgia, "Iowan Old Style", serif;
+  font-size: 16px;
+}
+
+.zcm-tour-body {
+  min-height: 84px;
+}
+.zcm-tour-body .zcm-guide-p {
+  font-size: 13px;
+}
+
+.zcm-tour-dots {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+}
+
+.zcm-tour-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--zcm-line);
+}
+.zcm-tour-dot.zcm-on {
+  background: var(--zcm-teal);
+}
+
+.zcm-tour-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
 }
 
 /* -------------------------------------------- main-window toolbar button
