@@ -9,6 +9,14 @@ on:
 permissions:
   contents: write
 
+# The plugin lives in the zotero-citation-map/ subfolder, but this workflow
+# must sit at the repo root (.github/workflows) for GitHub to see it at all.
+# Run every shell step from inside the subfolder so the relative paths
+# (scripts/, addon/, build/, update.json) resolve as they do locally.
+defaults:
+  run:
+    working-directory: zotero-citation-map
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,7 +32,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: citation-map-xpi
-          path: build/*.xpi
+          # 'with:' paths are relative to the repo root, not working-directory.
+          path: zotero-citation-map/build/*.xpi
 
       # Everything below only runs for a real version tag (v1.8.1, v2.0.0, …),
       # never for a manual workflow_dispatch run on a branch.
@@ -33,7 +42,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/*.xpi
+          files: zotero-citation-map/build/*.xpi
           generate_release_notes: true
 
       - name: Generate update.json
