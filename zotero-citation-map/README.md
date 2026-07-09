@@ -61,9 +61,18 @@ PNG and JSON export, and a local cache so rebuilding a map is instant.
 - Select a collection in the left pane, then **Tools → Show Citation Map**,
   or right-click the collection → **Show Citation Map for This Collection**.
 - With no collection selected, the whole library is mapped.
+- If the collection has **subcollections**, the map asks once which of them to
+  include (all, only the top collection, or any mix). Your choice is
+  remembered per collection and can be changed anytime from the **Subfolders**
+  control in the toolbar.
 - First run fetches reference lists from OpenAlex (a few seconds per 50
   papers). Results are cached in `citation-map-cache.json` in your Zotero
   data directory; later runs are nearly instant.
+- **Import/export:** save a map with **Export JSON** in the toolbar, and
+  reopen it with **Import JSON** (also in the toolbar, or **Tools → Import
+  Citation Map (JSON)…**) — no re-fetching. On import you can optionally
+  create a new Zotero collection (placed anywhere you pick in the
+  library/collection tree) and add the map's papers to your library by DOI.
 
 ### Reading the map
 
@@ -91,7 +100,8 @@ Settings live under `extensions.citation-map.*` in
 | --- | --- | --- |
 | `discoveryThreshold` | `2` | Min. number of your papers that must cite an external work before it's suggested |
 | `maxDiscovered` | `15` | Max. number of suggestions shown |
-| `includeSubcollections` | `true` | Map items of subcollections too |
+| `includeSubcollections` | `true` | Default for the subcollection picker (`true` = start with all subfolders checked) |
+| `subScopes` | `{}` | Remembered per-collection subcollection choice (managed by the picker) |
 | `minChainLength` | `3` | Min. papers in a highlighted chain |
 | `cacheDays` | `30` | Days before cached API data is refreshed |
 | `mailto` | `""` | Your e-mail for OpenAlex's "polite pool" (faster API responses; recommended) |

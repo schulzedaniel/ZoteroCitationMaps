@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.8.0
+
+- Smooth Timeline → Network transition. Switching back to the network no
+  longer re-runs a live force reflow from the spread-out timeline positions
+  (which scattered the islands). The exact network layout is remembered when
+  you enter Timeline, and every paper glides straight back to it — same calm,
+  wobble-free motion the timeline uses.
+- Islands sit closer together. The packing between separate citation clusters
+  was loosened too far; gaps and per-island spacing are tightened so the map
+  reads as one field instead of distant specks.
+- **Import JSON** is now a button in the map toolbar (next to Export JSON),
+  not just a Tools-menu entry — much easier to find.
+- Importing a map can rebuild it into your library. The import dialog lets you
+  pick — from your full library/collection tree — where to create a new
+  collection, name it, and then adds the map's papers to Zotero by DOI (with a
+  progress bar), reusing items you already have and linking the map to them so
+  "Show in library" works. Or just view the map without touching your library.
+
+## 1.7.0
+
+- Choose which subcollections to map. When you map a collection that has
+  subfolders, the map now asks once — up front — which of them to include,
+  with a checklist (Select all / Only this collection / any custom mix). Your
+  choice is remembered per collection. A "Subfolders" control in the toolbar
+  shows the current selection (e.g. "3 / 7") and reopens the picker anytime to
+  change it and rebuild; right after the first prompt it gives a one-time
+  pulse so you know where to find it later. The legacy
+  `includeSubcollections` preference now just sets the picker's default.
+- Import a map from JSON. **Tools → Import Citation Map (JSON)…** reopens a
+  map you previously saved with "Export JSON", in a new tab — no re-fetching.
+  Exports now carry the graph stats and a format marker so they round-trip
+  exactly, and import is tolerant of older or hand-edited files (it
+  reconstructs missing stats and drops dangling edges rather than failing).
+
 ## 1.6.0
 
 - Journal branding: papers are now tinted with their journal's own corporate

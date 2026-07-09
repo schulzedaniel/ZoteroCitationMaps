@@ -79,6 +79,19 @@ this.GraphView = class {
         /* pref write is best-effort */
       }
     }
+
+    // Just after the initial subcollection prompt, nudge the user toward the
+    // toolbar control that changes it — but wait for the guide to close first,
+    // otherwise the callout would be hidden behind it.
+    this._pendingScopeHint = !!(
+      this.ctx &&
+      this.ctx.subInfo &&
+      this.ctx.subInfo.firstTime
+    );
+    if (this._pendingScopeHint && !this._guide) {
+      this._pendingScopeHint = false;
+      this._playScopeHint();
+    }
   }
 
   // ================================================================ model
@@ -176,11 +189,13 @@ this.GraphView = class {
     const restLen = 150 * ls;
     const cellSize = 2 * 22 + 18; // grid cell for unconnected papers
 
-    // Estimate each cluster's on-screen radius (a generous over-estimate,
-    // so packed islands never overlap → no boundary jitter).
+    // Estimate each cluster's on-screen radius. Islands sit at fixed anchors
+    // and never repel each other, so we can pack them fairly tight — a modest
+    // over-estimate keeps neighbours from overlapping without leaving big
+    // empty moats between islands.
     const entries = multi.map((g) => ({
       nodes: g,
-      radius: restLen * (0.7 + 0.85 * Math.sqrt(g.length)),
+      radius: restLen * (0.55 + 0.7 * Math.sqrt(g.length)),
     }));
 
     // The unconnected papers become one grid "island".
@@ -202,7 +217,7 @@ this.GraphView = class {
     }
 
     // --- pack island anchors on a spiral, largest at the centre
-    const gap = 60 * ls;
+    const gap = 34 * ls; // breathing room between islands (tighter than before)
     const placed = [];
     for (const e of entries) {
       if (!placed.length) {
@@ -337,6 +352,69 @@ this.GraphView = class {
     this._applySuggestionVisibility();
   }
 
+  // ===================================================== subcollection scope
+
+  /** Toolbar control showing / changing which subcollections are mapped. */
+  _buildScopeControl() {
+    const wrap = this._el("div", "zcm-ctl zcm-scope-ctl");
+    wrap.appendChild(this._el("span", "zcm-ctl-label", "Subfolders"));
+    const btn = this._el("button", "zcm-btn zcm-scope-btn", this._scopeLabel());
+    btn.setAttribute(
+      "title",
+      "Choose which subcollections are included in this map"
+    );
+    btn.addEventListener("click", () => {
+      this._dismissScopeHint();
+      if (this.ctx.changeScope) this.ctx.changeScope();
+    });
+    wrap.appendChild(btn);
+    this._scopeCtl = wrap;
+    this._scopeBtn = btn;
+    return wrap;
+  }
+
+  _scopeLabel() {
+    const s = this.ctx && this.ctx.subInfo;
+    if (!s) return "All";
+    if (s.mode === "all") return `All (${s.total})`;
+    if (!s.included) return "This only";
+    return `${s.included} / ${s.total}`;
+  }
+
+  /**
+   * One-time nudge, right after the initial subcollection prompt, so the user
+   * learns where the choice can be changed later: the toolbar control pulses
+   * and a small callout points at it, both clearing after a few seconds or on
+   * the first interaction.
+   */
+  _playScopeHint() {
+    if (!this._scopeCtl || this._destroyed) return;
+    this._scopeCtl.classList.add("zcm-scope-pulse");
+    const callout = this._el(
+      "div",
+      "zcm-scope-callout",
+      "Change which subcollections are mapped here anytime."
+    );
+    this._scopeCtl.appendChild(callout);
+    this._scopeHintTimer = this.win.setTimeout(
+      () => this._dismissScopeHint(),
+      8000
+    );
+  }
+
+  _dismissScopeHint() {
+    if (this._scopeHintTimer) {
+      this.win.clearTimeout(this._scopeHintTimer);
+      this._scopeHintTimer = null;
+    }
+    this._pendingScopeHint = false;
+    if (this._scopeCtl) {
+      this._scopeCtl.classList.remove("zcm-scope-pulse");
+      const c = this._scopeCtl.querySelector(".zcm-scope-callout");
+      if (c && c.parentNode) c.parentNode.removeChild(c);
+    }
+  }
+
   // ================================================================== DOM
 
   _el(tag, cls, text) {
@@ -401,6 +479,11 @@ this.GraphView = class {
     sWrap.appendChild(sTog);
     bar.appendChild(sWrap);
 
+    // subcollection scope (only when a collection with subfolders is mapped)
+    if (this.ctx && this.ctx.subInfo && this.ctx.changeScope) {
+      bar.appendChild(this._buildScopeControl());
+    }
+
     const spacer = this._el("div", "zcm-spacer");
     bar.appendChild(spacer);
 
@@ -418,11 +501,23 @@ this.GraphView = class {
     }
     bar.appendChild(legend);
 
-    for (const [label, fn, titleTip] of [
+    const barButtons = [
       ["Export PNG", () => this._exportPNG(), "Save the map as an image"],
       ["Export JSON", () => this._exportJSON(), "Save nodes and edges as JSON"],
-      ["Rebuild", () => this.ctx.rebuild(), "Re-fetch citation data and redraw"],
-    ]) {
+    ];
+    if (this.ctx && this.ctx.importJSON) {
+      barButtons.push([
+        "Import JSON",
+        () => this.ctx.importJSON(),
+        "Open a previously exported map (JSON) in a new tab",
+      ]);
+    }
+    barButtons.push([
+      "Rebuild",
+      () => this.ctx.rebuild(),
+      "Re-fetch citation data and redraw",
+    ]);
+    for (const [label, fn, titleTip] of barButtons) {
       const b = this._el("button", "zcm-btn", label);
       b.setAttribute("title", titleTip);
       b.addEventListener("click", fn);
@@ -938,8 +1033,18 @@ this.GraphView = class {
   /** One simulation step (dispatch by mode). */
   _tick() {
     if (this.alpha < 0.02) return;
-    if (this.mode === "timeline") this._tickTimeline();
-    else this._tickForce();
+    if (this.mode === "timeline") {
+      this._tickTimeline();
+    } else if (this._returning) {
+      // Glide home along the remembered network positions (tlx/tly), the same
+      // calm monotonic ease the timeline uses — no forces, so no scatter.
+      this._tickTimeline();
+      // Hand control back to the force layout once the glide has arrived
+      // (checked here, since _animate stops calling _tick below this alpha).
+      if (this.alpha < 0.02) this._returning = false;
+    } else {
+      this._tickForce();
+    }
   }
 
   /**
@@ -1156,15 +1261,33 @@ this.GraphView = class {
   }
 
   _setMode(mode) {
-    this.mode = mode;
-    this.btnForce.classList.toggle("zcm-on", mode === "force");
-    this.btnTime.classList.toggle("zcm-on", mode === "timeline");
+    if (mode === this.mode) return;
     if (mode === "timeline") {
+      // Remember the exact network layout (islands and all) so we can glide
+      // straight back to it later, instead of re-running a live force reflow
+      // from the spread-out timeline positions — which scattered the islands.
+      for (const n of this.graph.nodes) {
+        n._netX = n.x;
+        n._netY = n.y;
+      }
+      this.mode = "timeline";
+      this._returning = false;
       this._computeTimelineLayout();
       this.alpha = 1; // ease into the grid
     } else {
-      this.alpha = 0.5; // let the forces reflow
+      // Returning to the network: ease every node back to its remembered
+      // position with the same monotonic approach the timeline uses (no
+      // forces, so it cannot overshoot, wobble, or fling islands apart).
+      this.mode = "force";
+      for (const n of this._active().nodes) {
+        n.tlx = n._netX != null ? n._netX : n.x;
+        n.tly = n._netY != null ? n._netY : n.y;
+      }
+      this._returning = true;
+      this.alpha = 1;
     }
+    this.btnForce.classList.toggle("zcm-on", this.mode === "force");
+    this.btnTime.classList.toggle("zcm-on", this.mode === "timeline");
     this._dirty = true;
     // Re-fit once the new layout has settled.
     this.win.setTimeout(() => {
@@ -1711,6 +1834,16 @@ this.GraphView = class {
       for (const p of paras) g.appendChild(this._el("div", "zcm-guide-p", p));
     };
 
+    if (this.ctx && this.ctx.subInfo && this.ctx.changeScope) {
+      sec(
+        "Subcollections",
+        "This collection has subfolders. The “Subfolders” control in the " +
+          "toolbar shows how many are included and lets you change the mix at " +
+          "any time — pick exactly the folders you want and the map rebuilds. " +
+          "Your choice is remembered for this collection."
+      );
+    }
+
     // legend with real color dots
     g.appendChild(this._el("div", "zcm-guide-h", "The dots"));
     const legend = this._el("div", "zcm-guide-legend");
@@ -1842,6 +1975,11 @@ this.GraphView = class {
       this._guide.parentNode.removeChild(this._guide);
     }
     this._guide = null;
+    // The guide was covering the toolbar; now show the deferred scope nudge.
+    if (this._pendingScopeHint) {
+      this._pendingScopeHint = false;
+      this._playScopeHint();
+    }
   }
 
   // ========================================================= Zotero actions
@@ -1921,10 +2059,26 @@ this.GraphView = class {
   async _exportJSON() {
     const path = await this._pickSavePath("citation-map.json", "JSON file", "json");
     if (!path) return;
+    // A clean, stable node shape (drop volatile layout/interaction fields), so
+    // the file round-trips cleanly through "Import Citation Map (JSON)".
     const data = {
+      format: "zotero-citation-map",
+      formatVersion: 1,
       generated: new Date().toISOString(),
       collection: this.ctx.collectionName,
-      nodes: this.graph.nodes.map(({ vx, vy, fixed, r, _ci, ...n }) => n),
+      stats: this.graph.stats,
+      nodes: this.graph.nodes.map((n) => ({
+        key: n.key,
+        kind: n.kind,
+        title: n.title,
+        year: n.year,
+        authors: n.authors,
+        venue: n.venue,
+        doi: n.doi,
+        zoteroItemID: n.zoteroItemID,
+        citedByCount: n.citedByCount,
+        inLibraryCitations: n.inLibraryCitations,
+      })),
       edges: this.graph.edges,
       chains: this.graph.chains,
     };
@@ -1935,6 +2089,7 @@ this.GraphView = class {
 
   destroy() {
     this._destroyed = true;
+    if (this._scopeHintTimer) this.win.clearTimeout(this._scopeHintTimer);
     if (this._resizeObserver) this._resizeObserver.disconnect();
     if (this.root && this.root.parentNode) {
       this.root.parentNode.removeChild(this.root);

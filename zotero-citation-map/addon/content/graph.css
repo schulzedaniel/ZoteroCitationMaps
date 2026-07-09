@@ -749,6 +749,220 @@
   white-space: nowrap;
 }
 
+/* ------------------------------------------------- subcollection scope */
+
+.zcm-scope-ctl {
+  position: relative; /* anchor for the one-time callout */
+}
+
+.zcm-scope-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.zcm-scope-btn::after {
+  content: "▾";
+  font-size: 9px;
+  opacity: 0.7;
+}
+
+/* One-time attention nudge after the initial subcollection prompt. */
+.zcm-scope-pulse .zcm-scope-btn {
+  border-color: var(--zcm-teal);
+  color: var(--zcm-teal);
+  animation: zcm-scope-pulse 1.4s ease-out 4;
+}
+@keyframes zcm-scope-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(70, 211, 194, 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(70, 211, 194, 0);
+  }
+}
+
+.zcm-scope-callout {
+  position: absolute;
+  top: calc(100% + 9px);
+  left: 0;
+  z-index: 8;
+  width: max-content;
+  max-width: 240px;
+  padding: 7px 10px;
+  border: 1px solid var(--zcm-teal);
+  border-radius: 8px;
+  background: rgba(22, 29, 49, 0.98);
+  color: var(--zcm-text);
+  font-size: 11.5px;
+  line-height: 1.4;
+  box-shadow: 0 6px 20px rgba(8, 11, 21, 0.5);
+}
+.zcm-scope-callout::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 18px;
+  width: 10px;
+  height: 10px;
+  background: rgba(22, 29, 49, 0.98);
+  border-left: 1px solid var(--zcm-teal);
+  border-top: 1px solid var(--zcm-teal);
+  transform: rotate(45deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zcm-scope-pulse .zcm-scope-btn {
+    animation: none;
+  }
+}
+
+/* The picker overlay (initial prompt + later changes). */
+.zcm-scope-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* solid enough to stand on its own over an empty tab, translucent enough
+     to hint at the map underneath when changing the scope later */
+  background: rgba(10, 14, 26, 0.9);
+  /* .zcm-root also sets height/width/flex-direction; override for centring */
+  height: 100%;
+  flex-direction: row;
+}
+
+.zcm-scope-card {
+  width: min(460px, 88%);
+  max-height: 82%;
+  display: flex;
+  flex-direction: column;
+  background: var(--zcm-panel);
+  border: 1px solid var(--zcm-line);
+  border-radius: 14px;
+  padding: 20px 22px 18px;
+}
+
+.zcm-scope-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.zcm-scope-sub {
+  color: var(--zcm-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 6px 0 12px;
+}
+
+.zcm-scope-tools {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.zcm-scope-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  border: 1px solid var(--zcm-line);
+  border-radius: 10px;
+  background: var(--zcm-panel-2);
+  padding: 4px;
+}
+
+.zcm-scope-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.zcm-scope-row:hover {
+  background: rgba(147, 161, 199, 0.08);
+}
+.zcm-scope-row input {
+  accent-color: var(--zcm-teal);
+  cursor: pointer;
+}
+.zcm-scope-root {
+  cursor: default;
+}
+.zcm-scope-root:hover {
+  background: transparent;
+}
+
+.zcm-scope-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zcm-scope-tag {
+  margin-left: auto;
+  color: var(--zcm-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.zcm-scope-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* Import dialog extras (name field + selectable library/collection tree). */
+.zcm-import-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.zcm-import-label {
+  color: var(--zcm-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.zcm-scope-input {
+  padding: 6px 10px;
+  border: 1px solid var(--zcm-line);
+  border-radius: 6px;
+  background: var(--zcm-bg);
+  color: var(--zcm-text);
+  font: inherit;
+  outline: none;
+}
+.zcm-scope-input:focus {
+  border-color: var(--zcm-teal);
+}
+
+.zcm-scope-icon {
+  flex: 0 0 auto;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.zcm-scope-lib {
+  font-weight: 600;
+}
+
+/* selected target row in the import tree */
+.zcm-scope-row.zcm-sel {
+  background: rgba(70, 211, 194, 0.14);
+  outline: 1px solid var(--zcm-teal);
+}
+.zcm-scope-row.zcm-sel:hover {
+  background: rgba(70, 211, 194, 0.18);
+}
+
 /* -------------------------------------------- main-window toolbar button
  * The one exception to "nothing outside .zcm-root": the plugin's own
  * button in Zotero's items toolbar, scoped by its unique id.

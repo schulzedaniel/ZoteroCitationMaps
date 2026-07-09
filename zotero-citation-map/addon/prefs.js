@@ -9,8 +9,14 @@ pref("extensions.citation-map.discoveryThreshold", 2);
 // Maximum number of suggested (discovered) papers shown on the map.
 pref("extensions.citation-map.maxDiscovered", 15);
 
-// Include items of subcollections when mapping a collection.
+// Default for the first-run subcollection picker: true = start with every
+// subfolder checked, false = start with only the selected collection.
 pref("extensions.citation-map.includeSubcollections", true);
+
+// Remembered per-collection subcollection choice, as JSON:
+//   { "<collectionID>": { "mode": "all" | "custom", "ids": [<collectionID>...] } }
+// Managed automatically by the in-map "Subfolders" picker.
+pref("extensions.citation-map.subScopes", "{}");
 
 // Minimum length (number of nodes) for a highlighted citation chain.
 pref("extensions.citation-map.minChainLength", 3);
