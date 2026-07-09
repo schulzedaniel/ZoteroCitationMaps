@@ -1,0 +1,20 @@
+{
+  "manifest_version": 2,
+  "name": "Citation Map",
+  "version": "1.6.0",
+  "description": "Interactive citation network for your Zotero collections: visualize who cites whom, discover important papers you are missing, and trace citation chains through time.",
+  "author": "Daniel",
+  "homepage_url": "https://github.com/YOUR_GITHUB_USERNAME/zotero-citation-map",
+  "icons": {
+    "48": "content/icons/icon-48.png",
+    "96": "content/icons/icon-96.png"
+  },
+  "applications": {
+    "zotero": {
+      "id": "citation-map@daniel.dev",
+      "update_url": "https://github.com/YOUR_GITHUB_USERNAME/zotero-citation-map/releases/download/release/update.json",
+      "strict_min_version": "7.0",
+      "strict_max_version": "9.*"
+    }
+  }
+}

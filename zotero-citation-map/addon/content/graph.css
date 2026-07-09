@@ -1,0 +1,767 @@
+/**
+ * graph.css — styles for the Citation Map tab.
+ *
+ * Every rule is scoped under .zcm-root / .zcm- prefixed classes because
+ * this stylesheet is injected into Zotero's MAIN window document; nothing
+ * here may leak into Zotero's own UI.
+ *
+ * Design tokens — "observatory" theme:
+ *   Deep indigo night for the canvas, ivory paper-dots for your library,
+ *   amber for suggested papers (a highlighter, not an alarm), and teal
+ *   threads for citation chains. Serif display for the panel identity,
+ *   monospace for years and counts (data), system sans for everything else.
+ */
+
+.zcm-root {
+  --zcm-bg: #0e1424;
+  --zcm-panel: #161d31;
+  --zcm-panel-2: #1b2340;
+  --zcm-line: rgba(147, 161, 199, 0.16);
+  --zcm-text: #e9ecf5;
+  --zcm-muted: #8e96b0;
+  --zcm-node: #f2eddd;   /* ivory — papers in your library */
+  --zcm-amber: #f0a63f;  /* suggested / discovered papers */
+  --zcm-slate: #66708c;  /* unresolved items */
+  --zcm-teal: #46d3c2;   /* citation chains */
+  --zcm-edge: #39415f;
+
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--zcm-bg);
+  color: var(--zcm-text);
+  font: 13px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+
+/* ------------------------------------------------------------- toolbar */
+
+.zcm-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap; /* narrow windows: controls wrap instead of clipping */
+  gap: 10px 14px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--zcm-line);
+  background: var(--zcm-panel);
+  flex: 0 0 auto;
+}
+
+.zcm-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.zcm-ctl-label {
+  color: var(--zcm-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.zcm-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.zcm-title-name {
+  font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  font-size: 17px;
+  letter-spacing: 0.01em;
+}
+
+.zcm-title-coll {
+  color: var(--zcm-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.zcm-search {
+  width: 210px;
+  padding: 5px 10px;
+  border: 1px solid var(--zcm-line);
+  border-radius: 6px;
+  background: var(--zcm-bg);
+  color: var(--zcm-text);
+  outline: none;
+}
+.zcm-search:focus {
+  border-color: var(--zcm-teal);
+}
+
+.zcm-toggle {
+  display: flex;
+  border: 1px solid var(--zcm-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.zcm-toggle-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--zcm-muted);
+  padding: 5px 12px;
+  cursor: pointer;
+  font: inherit;
+}
+.zcm-toggle-btn.zcm-on {
+  background: var(--zcm-panel-2);
+  color: var(--zcm-text);
+}
+
+.zcm-spacer {
+  flex: 1;
+}
+
+.zcm-legend {
+  display: flex;
+  gap: 12px;
+  color: var(--zcm-muted);
+  font-size: 11.5px;
+}
+.zcm-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.zcm-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.zcm-dot-library {
+  background: var(--zcm-node);
+}
+.zcm-dot-discovered {
+  background: var(--zcm-amber);
+}
+.zcm-dot-unresolved {
+  background: var(--zcm-slate);
+}
+
+.zcm-btn {
+  appearance: none;
+  border: 1px solid var(--zcm-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--zcm-text);
+  padding: 5px 11px;
+  cursor: pointer;
+  font: inherit;
+}
+.zcm-btn:hover {
+  background: var(--zcm-panel-2);
+}
+.zcm-btn:focus-visible {
+  outline: 2px solid var(--zcm-teal);
+  outline-offset: 1px;
+}
+.zcm-btn-primary {
+  border-color: var(--zcm-teal);
+  color: var(--zcm-teal);
+}
+.zcm-btn[disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- main */
+
+.zcm-main {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.zcm-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.zcm-canvas {
+  display: block;
+  cursor: grab;
+}
+
+.zcm-tooltip {
+  position: absolute;
+  display: none;
+  max-width: 270px;
+  padding: 8px 10px;
+  border: 1px solid var(--zcm-line);
+  border-radius: 8px;
+  background: rgba(22, 29, 49, 0.96);
+  pointer-events: none;
+  z-index: 5;
+}
+.zcm-tt-title {
+  font-size: 12.5px;
+}
+.zcm-tt-meta {
+  margin-top: 3px;
+  color: var(--zcm-muted);
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+/* ------------------------------------------------------------- sidebar */
+
+.zcm-side {
+  flex: 0 0 320px;
+  border-left: 1px solid var(--zcm-line);
+  background: var(--zcm-panel);
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.zcm-card {
+  border: 1px solid var(--zcm-line);
+  border-radius: 10px;
+  background: var(--zcm-panel-2);
+  padding: 12px;
+}
+
+.zcm-card-head {
+  font-family: Georgia, "Iowan Old Style", serif;
+  font-size: 14.5px;
+  margin-bottom: 2px;
+}
+
+.zcm-card-sub {
+  color: var(--zcm-muted);
+  font-size: 11.5px;
+  margin-bottom: 8px;
+}
+
+.zcm-empty {
+  color: var(--zcm-muted);
+  font-size: 12px;
+  padding: 6px 0;
+}
+
+.zcm-row {
+  padding: 8px 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.zcm-row:hover {
+  background: rgba(147, 161, 199, 0.08);
+}
+.zcm-row.zcm-active {
+  background: rgba(70, 211, 194, 0.1);
+  outline: 1px solid var(--zcm-teal);
+}
+
+.zcm-row-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 3px;
+}
+
+.zcm-row-title {
+  font-size: 12.5px;
+}
+
+.zcm-badge {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  color: var(--zcm-bg);
+  background: var(--zcm-amber);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.zcm-badge-chain {
+  background: var(--zcm-teal);
+}
+
+.zcm-year {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--zcm-muted);
+}
+
+/* details card */
+.zcm-kind {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+.zcm-kind-library {
+  color: var(--zcm-muted);
+}
+.zcm-kind-discovered {
+  color: var(--zcm-amber);
+}
+.zcm-kind-unresolved {
+  color: var(--zcm-slate);
+}
+
+.zcm-d-title {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.zcm-d-meta {
+  margin-top: 5px;
+  color: var(--zcm-muted);
+  font-size: 12px;
+}
+
+.zcm-d-stats {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.zcm-d-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+/* -------------------------------------------------------------- status */
+
+.zcm-status {
+  flex: 0 0 auto;
+  padding: 6px 16px;
+  border-top: 1px solid var(--zcm-line);
+  color: var(--zcm-muted);
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  background: var(--zcm-panel);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------------------------------------------ progress */
+
+.zcm-progress {
+  align-items: center;
+  justify-content: center;
+}
+
+.zcm-progress-inner {
+  width: min(420px, 80%);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.zcm-progress-label {
+  color: var(--zcm-muted);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.zcm-progress-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--zcm-panel-2);
+  overflow: hidden;
+}
+
+.zcm-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--zcm-teal), var(--zcm-amber));
+  transition: width 0.25s ease;
+}
+
+.zcm-progress-hint {
+  color: var(--zcm-muted);
+  font-size: 11.5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zcm-progress-fill {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------- map controls */
+
+.zcm-map-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 6;
+}
+
+.zcm-map-btn {
+  appearance: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--zcm-line);
+  border-radius: 8px;
+  background: rgba(22, 29, 49, 0.92);
+  color: var(--zcm-text);
+  font: 15px/1 -apple-system, "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+}
+.zcm-map-btn:hover {
+  background: var(--zcm-panel-2);
+  border-color: var(--zcm-teal);
+}
+
+/* ------------------------------------------------------- tooltip extras */
+
+.zcm-tt-kind {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+
+.zcm-tt-authors {
+  margin-top: 3px;
+  color: var(--zcm-muted);
+  font-size: 11px;
+}
+
+.zcm-tt-hint {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid var(--zcm-line);
+  color: var(--zcm-muted);
+  font-size: 10px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+/* ------------------------------------------------------- sidebar extras */
+
+.zcm-chips {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.zcm-chip {
+  appearance: none;
+  border: 1px solid var(--zcm-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--zcm-muted);
+  font: 10.5px ui-monospace, Menlo, Consolas, monospace;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.zcm-chip:hover {
+  border-color: var(--zcm-amber);
+}
+.zcm-chip.zcm-on {
+  background: var(--zcm-amber);
+  border-color: var(--zcm-amber);
+  color: var(--zcm-bg);
+}
+
+.zcm-row-sub {
+  margin-top: 2px;
+  color: var(--zcm-muted);
+  font-size: 11px;
+}
+
+.zcm-d-venue {
+  margin-top: 4px;
+  color: var(--zcm-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* ------------------------------------------------ publisher brand identity
+ * Papers are tinted with their journal's corporate identity. The brand
+ * colour and logo-style font are dynamic (per publisher family), so they are
+ * set inline from modules/publisherCI.js; these rules only provide structure.
+ */
+
+.zcm-ci-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: baseline;
+  /* faint outline so near-black brand colours stay visible on the dark panel */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+
+.zcm-ci-venue {
+  /* font-family + color are applied inline; keep the wordmark from wrapping
+     awkwardly and give it a touch more presence than the surrounding meta */
+  letter-spacing: 0.01em;
+}
+
+/* Family chip in the details card: "◼ Nature Portfolio · best-effort cue" */
+.zcm-ci-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 3px 9px;
+  border: 1px solid var(--zcm-line);
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--zcm-muted);
+}
+
+.zcm-ci-best {
+  text-transform: none;
+  letter-spacing: 0;
+  font-style: italic;
+  opacity: 0.7;
+}
+
+/* chain step list — only visible while the chain is active */
+.zcm-chain-steps {
+  display: none;
+  margin-top: 8px;
+  border-top: 1px solid var(--zcm-line);
+  padding-top: 8px;
+}
+.zcm-chain-row.zcm-active .zcm-chain-steps {
+  display: block;
+}
+
+.zcm-chain-step {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  font-size: 11.5px;
+}
+.zcm-chain-step:hover {
+  background: rgba(70, 211, 194, 0.12);
+}
+
+.zcm-chain-num {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--zcm-teal);
+  color: var(--zcm-bg);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 16px;
+}
+
+.zcm-chain-link {
+  color: var(--zcm-muted);
+  font-size: 10px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  padding-left: 9px;
+  opacity: 0.8;
+}
+
+/* ----------------------------------------------------------- note preview */
+
+.zcm-notes {
+  margin-top: 14px;
+  border-top: 1px solid var(--zcm-line);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.zcm-notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: Georgia, "Iowan Old Style", serif;
+  font-size: 13.5px;
+}
+
+.zcm-notes-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zcm-notes-counter {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  color: var(--zcm-muted);
+}
+
+.zcm-btn-mini {
+  padding: 1px 8px;
+  font-size: 12px;
+}
+
+/* Notes are authored on a light background — keep them readable
+   inside the dark panel by rendering them as a paper-like card. */
+.zcm-note-preview {
+  max-height: 240px;
+  overflow-y: auto;
+  background: #f6f3ea;
+  color: #26282e;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.zcm-note-preview img {
+  max-width: 100%;
+  height: auto;
+}
+.zcm-note-preview a {
+  color: #1a6f64;
+}
+.zcm-note-preview h1,
+.zcm-note-preview h2,
+.zcm-note-preview h3 {
+  font-size: 13px;
+  margin: 8px 0 4px;
+}
+.zcm-note-preview p {
+  margin: 0 0 6px;
+}
+.zcm-note-preview blockquote {
+  margin: 6px 0;
+  padding-left: 8px;
+  border-left: 3px solid #cfc8b4;
+  color: #55575e;
+}
+
+/* ----------------------------------------------------------------- guide */
+
+.zcm-guide-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 11, 21, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.zcm-guide {
+  width: min(600px, 88%);
+  max-height: 86%;
+  overflow-y: auto;
+  background: var(--zcm-panel);
+  border: 1px solid var(--zcm-line);
+  border-radius: 14px;
+  padding: 22px 26px 26px;
+}
+
+.zcm-guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.zcm-guide-h {
+  font-family: Georgia, "Iowan Old Style", serif;
+  font-size: 14.5px;
+  color: var(--zcm-teal);
+  margin: 16px 0 4px;
+}
+
+.zcm-guide-p {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--zcm-text);
+  margin-bottom: 4px;
+}
+
+.zcm-guide-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 6px 0;
+  font-size: 12.5px;
+}
+.zcm-guide-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zcm-guide-chain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 8px;
+  padding: 12px 14px;
+  background: var(--zcm-panel-2);
+  border-radius: 10px;
+}
+
+.zcm-guide-chain-dot {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.zcm-guide-chain-dot .zcm-guide-chain-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--zcm-node);
+  color: var(--zcm-bg);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 22px;
+  box-shadow: 0 0 0 3px rgba(70, 211, 194, 0.35);
+}
+.zcm-guide-chain-year {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: var(--zcm-muted);
+}
+.zcm-guide-chain-arrow {
+  color: var(--zcm-teal);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------- main-window toolbar button
+ * The one exception to "nothing outside .zcm-root": the plugin's own
+ * button in Zotero's items toolbar, scoped by its unique id.
+ */
+
+#zcm-tb-button {
+  list-style-image: url("icons/citation-map.svg");
+}
+
+#zcm-tb-button .toolbarbutton-icon {
+  -moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+  fill: currentColor;
+  stroke: currentColor;
+  width: 16px;
+  height: 16px;
+}

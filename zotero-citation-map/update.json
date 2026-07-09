@@ -1,0 +1,19 @@
+{
+  "addons": {
+    "citation-map@daniel.dev": {
+      "updates": [
+        {
+          "version": "1.0.0",
+          "update_link": "https://github.com/YOUR_GITHUB_USERNAME/zotero-citation-map/releases/download/v1.0.0/citation-map-1.0.0.xpi",
+          "update_hash": "sha256:REPLACE_WITH_XPI_SHA256",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "7.0",
+              "strict_max_version": "9.*"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,16 @@
+<!-- Citation Map toolbar icon: a small citation network (4 nodes, 4 edges).
+     Uses context-fill so it inherits Zotero's toolbar icon color. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <g stroke="context-fill" stroke-width="1.2" fill="none" stroke-linecap="round">
+    <path d="M3.4 4.2 12 3.2"/>
+    <path d="M3.4 4.2 4.8 12.2"/>
+    <path d="M12 3.2 12.8 11.6"/>
+    <path d="M4.8 12.2 12.8 11.6"/>
+  </g>
+  <g fill="context-fill">
+    <circle cx="3.4" cy="4.2" r="2.1"/>
+    <circle cx="12" cy="3.2" r="1.7"/>
+    <circle cx="4.8" cy="12.2" r="1.7"/>
+    <circle cx="12.8" cy="11.6" r="1.7"/>
+  </g>
+</svg>
