@@ -26,9 +26,50 @@ jobs:
           name: citation-map-xpi
           path: build/*.xpi
 
-      - name: Attach to release (tags only)
-        if: startsWith(github.ref, 'refs/tags/')
+      # Everything below only runs for a real version tag (v1.8.1, v2.0.0, …),
+      # never for a manual workflow_dispatch run on a branch.
+
+      - name: Attach XPI to this release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: build/*.xpi
           generate_release_notes: true
+
+      - name: Generate update.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION=$(python3 -c "import json;print(json.load(open('addon/manifest.json'))['version'])")
+          XPI="build/citation-map-${VERSION}.xpi"
+          # Hash the exact file we just attached above, so update_hash always
+          # matches what users actually download (same job = same bytes).
+          HASH=$(shasum -a 256 "$XPI" | cut -d' ' -f1)
+          cat > update.json <<EOF
+          {
+            "addons": {
+              "citation-map@daniel.dev": {
+                "updates": [
+                  {
+                    "version": "${VERSION}",
+                    "update_link": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/citation-map-${VERSION}.xpi",
+                    "update_hash": "sha256:${HASH}",
+                    "applications": { "zotero": { "strict_min_version": "7.0", "strict_max_version": "9.*" } }
+                  }
+                ]
+              }
+            }
+          }
+          EOF
+          echo "Generated update.json for v${VERSION} (sha256:${HASH})"
+
+      - name: Publish update.json to the 'release' channel
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The manifest's update_url points at the asset on a fixed release
+          # tagged "release". Create it once, then overwrite its update.json.
+          gh release view release >/dev/null 2>&1 || \
+            gh release create release --title "Auto-update manifest" \
+              --notes "Zotero auto-update manifest. Managed by CI — do not delete."
+          gh release upload release update.json --clobber

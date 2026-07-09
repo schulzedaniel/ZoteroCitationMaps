@@ -3,9 +3,9 @@
     "citation-map@daniel.dev": {
       "updates": [
         {
-          "version": "1.8.0",
-          "update_link": "https://github.com/schulzedaniel/ZoteroCitationMaps/releases/download/v1.8.0/citation-map-1.8.0.xpi",
-          "update_hash": "sha256:REPLACE_WITH_XPI_SHA256",
+          "version": "1.8.1",
+          "update_link": "https://github.com/schulzedaniel/ZoteroCitationMaps/releases/download/v1.8.1/citation-map-1.8.1.xpi",
+          "update_hash": "sha256:f633d035c0bc188f85bc119b31f71f0cb0b57dbfea54deb58b273ab5501d41c9",
           "applications": {
             "zotero": {
               "strict_min_version": "7.0",
