@@ -5,7 +5,7 @@
         {
           "version": "1.9.0",
           "update_link": "https://github.com/schulzedaniel/ZoteroCitationMaps/releases/download/v1.9.0/citation-map-1.9.0.xpi",
-          "update_hash": "sha256:9eabe827c843361f4200b95aeb36be94dc4cc832397b90cd9081c2e9ce07eaa6",
+          "update_hash": "sha256:13a7b2b798612073ea17bbad09e49a671f41870b7de33d037aab0b5bc750b22b",
           "applications": {
             "zotero": {
               "strict_min_version": "7.0",
