@@ -58,3 +58,42 @@ pref("extensions.citation-map.mailto", "");
 // + logo-style font for the journal name). Set false for the neutral house
 // style everywhere. See modules/publisherCI.js.
 pref("extensions.citation-map.journalBranding", true);
+
+// What the dot colors encode: "kind" (the neutral default — library /
+// suggested / no-data in distinct colors, no journal coloring), "publisher"
+// (journal branding rims), "year" (publication-year gradient), "cluster"
+// (citation cluster) or "oa" (open-access status).
+pref("extensions.citation-map.colorMode", "kind");
+
+// Sidebar width in px and whether it starts collapsed (both adjustable from
+// the map: drag the divider, click the collapse chevron).
+pref("extensions.citation-map.sidebarWidth", 320);
+pref("extensions.citation-map.sidebarCollapsed", false);
+
+// Remembered Discover time filter: "any", "2y", "5y", "10y", or a 4-digit
+// year string for a custom cutoff.
+pref("extensions.citation-map.discoverSince", "any");
+
+// Draw bibliographic-coupling links (two of your papers sharing several
+// references) as a second, dashed layer on the map.
+pref("extensions.citation-map.showCoupling", false);
+
+// Minimum number of shared references before two papers count as coupled.
+pref("extensions.citation-map.couplingMinShared", 3);
+
+// The plugin version whose "What's new" overlay was last shown. Managed
+// automatically; upgraders see the overlay once per feature release.
+pref("extensions.citation-map.lastSeenVersion", "");
+
+// Hide review / secondary-literature articles everywhere (map, suggestions,
+// Discover results, My papers). Toggled from the toolbar.
+pref("extensions.citation-map.hideReviews", false);
+
+// Discover search: which sources are enabled by default.
+pref("extensions.citation-map.discoverCiting", true);
+pref("extensions.citation-map.discoverTopics", true);
+pref("extensions.citation-map.discoverRelated", true);
+
+// Ask for confirmation before mapping more than this many items, and refuse
+// gently above 4x this (very large maps can make Zotero unresponsive).
+pref("extensions.citation-map.warnItemCount", 400);

@@ -34,10 +34,18 @@ this.Main = {
     const doc = win.document;
     const created = [];
 
-    // Stylesheet for the graph view (scoped by .zcm- prefix).
+    // Stylesheet for the graph view (scoped by .zcm- prefix). A cache-busting
+    // query (version + load time) forces Zotero to load the CURRENT css and
+    // never a stale cached copy from a previous install at the same URL, which
+    // otherwise made cosmetic changes appear not to take effect.
     const link = doc.createElement("link");
     link.rel = "stylesheet";
-    link.href = this._ns.rootURI + "content/graph.css";
+    link.href =
+      this._ns.rootURI +
+      "content/graph.css?v=" +
+      encodeURIComponent(this._ns.version || "0") +
+      "&t=" +
+      Date.now();
     doc.documentElement.appendChild(link);
     created.push(link);
 
@@ -522,7 +530,23 @@ this.Main = {
       this._abort(win, tabID, "The selected collection has no items to map.");
       return;
     }
-    if (items.length > 400) {
+    // Two warning tiers: a "this takes a while" confirm, and a strong
+    // warning for very large maps (the layout is O(n²)-ish; thousands of
+    // items can make Zotero unresponsive).
+    const warnAt =
+      Zotero.Prefs.get("extensions.citation-map.warnItemCount", true) || 400;
+    if (items.length > warnAt * 4) {
+      const ok = win.confirm(
+        `Citation Map: ${items.length} items is a very large map. Building ` +
+          `and laying it out can take a long time and may make Zotero ` +
+          `unresponsive — mapping per (sub)collection is strongly ` +
+          `recommended instead.\n\nContinue anyway?`
+      );
+      if (!ok) {
+        this._abort(win, tabID);
+        return;
+      }
+    } else if (items.length > warnAt) {
       const ok = win.confirm(
         `Citation Map: this will map ${items.length} items, which can take a ` +
           `while on first run. Continue?`
@@ -583,9 +607,12 @@ this.Main = {
     hint.textContent =
       "Reference lists come from OpenAlex and are cached locally — " +
       "the next run of this collection will be nearly instant.";
+    const warn = doc.createElement("div");
+    warn.className = "zcm-progress-warn";
     inner.appendChild(h);
     inner.appendChild(label);
     inner.appendChild(barOuter);
+    inner.appendChild(warn);
     inner.appendChild(hint);
     prog.appendChild(inner);
     container.appendChild(prog);
@@ -595,6 +622,10 @@ this.Main = {
         label.textContent = `${phase} — ${done} / ${total}`;
         barInner.style.width =
           (total ? Math.round((done / total) * 100) : 0) + "%";
+      },
+      warn: (msg) => {
+        warn.textContent = msg || "";
+        warn.style.display = msg ? "block" : "none";
       },
       remove: () => {
         if (prog.parentNode) prog.parentNode.removeChild(prog);
@@ -613,14 +644,65 @@ this.Main = {
     container.textContent = "";
 
     const prog = this._progressScreen(doc, container);
+    const DS = this._ns.DataSource;
+    DS.resetNetState();
+    // Progress callback doubles as the network-health display: a slow
+    // connection shows a patient hint, a dead one an explanation — so the
+    // user always knows WHY nothing seems to happen.
+    const onProgress = (phase, done, total) => {
+      prog.onProgress(phase, done, total);
+      if (DS.netState === "slow") {
+        prog.warn(
+          "Your connection seems slow — OpenAlex is answering, but it may " +
+            "take a few minutes. Everything is cached for next time."
+        );
+      } else if (DS.netState === "offline") {
+        prog.warn(
+          "OpenAlex can't be reached — you appear to be offline. Using " +
+            "locally cached data where possible."
+        );
+      }
+    };
     try {
-      const graph = await this._ns.GraphBuilder.build(items, prog.onProgress);
-      prog.remove();
+      const graph = await this._ns.GraphBuilder.build(items, onProgress);
+
+      // Fully offline and nothing cached: an all-grey map would only
+      // confuse — explain instead.
+      if (graph.stats.resolved === 0 && DS.netState === "offline") {
+        prog.fail(
+          "No internet connection — OpenAlex could not be reached and none " +
+            "of these papers are in the local cache yet. Reconnect and use " +
+            "Tools → Show Citation Map again (collections mapped while " +
+            "online keep working offline)."
+        );
+        return;
+      }
+
+      // "New since last build" highlights: diff against the stored snapshot
+      // of this source, then remember the current build. Ad-hoc selections
+      // have no stable identity, so they are not diffed.
+      const snapKey =
+        source.kind === "collection"
+          ? "c" + source.collection.id
+          : source.kind === "library"
+          ? "L" + source.libraryID
+          : null;
+      let changed = null;
+      if (snapKey) {
+        const prev = this._ns.DataSource.getSnapshot(snapKey);
+        changed = this._ns.GraphBuilder.markNew(graph, prev);
+        await this._ns.DataSource.putSnapshot(
+          snapKey,
+          this._ns.GraphBuilder.snapshotOf(graph)
+        );
+      }
 
       const ctx = {
         collectionName: source.name,
         collectionID: source.kind === "collection" ? source.collection.id : null,
         subInfo,
+        changed,
+        netState: DS.netState, // view shows a notice for "slow"/"offline"
         importJSON: () => this.importJSON(win),
         rebuild: async () => {
           await this._runPipeline(win, container, tabID, source, {
@@ -633,13 +715,21 @@ this.Main = {
             : null,
       };
 
+      // Build the view FIRST, then remove the progress screen — so if the
+      // view constructor throws, the progress screen is still on-screen for
+      // fail() to show the error, instead of leaving a blank tab.
       const view = new this._ns.GraphView(doc, container, graph, ctx);
       view._tabID = tabID;
       this._views.push(view);
+      prog.remove();
     } catch (e) {
       Zotero.debug("[Citation Map] Build failed: " + e + "\n" + (e && e.stack));
       prog.fail(
-        "Could not build the map. Are you online? See Help → Debug Output for details."
+        DS.netState === "offline"
+          ? "No internet connection — OpenAlex could not be reached. " +
+              "Reconnect and try again; collections mapped while online " +
+              "keep working offline."
+          : "Could not build the map. See Help → Debug Output for details."
       );
     }
   },
@@ -1084,6 +1174,16 @@ this.Main = {
         zoteroItemID: Number.isFinite(n.zoteroItemID) ? n.zoteroItemID : null,
         citedByCount: Number(n.citedByCount) || 0,
         inLibraryCitations: Number(n.inLibraryCitations) || 0,
+        topics: Array.isArray(n.topics)
+          ? n.topics.slice(0, 3).map((t) => ({
+              id: String((t && t.id) || ""),
+              name: String((t && t.name) || ""),
+              score: Number(t && t.score) || 0,
+            }))
+          : [],
+        oaStatus: n.oaStatus != null ? String(n.oaStatus) : null,
+        via: n.via != null ? String(n.via) : null,
+        citesCount: Number(n.citesCount) || 0,
       });
     }
     if (!nodes.length) throw new Error("The file contains no usable nodes.");
@@ -1096,6 +1196,14 @@ this.Main = {
       (c) => Array.isArray(c) && c.length && c.every((k) => keys.has(String(k)))
     );
 
+    const coupling = (Array.isArray(data.coupling) ? data.coupling : [])
+      .filter((c) => c && keys.has(String(c.a)) && keys.has(String(c.b)))
+      .map((c) => ({
+        a: String(c.a),
+        b: String(c.b),
+        shared: Number(c.shared) || 2,
+      }));
+
     const stats =
       data.stats && typeof data.stats === "object"
         ? data.stats
@@ -1106,7 +1214,7 @@ this.Main = {
             discovered: nodes.filter((n) => n.kind === "discovered").length,
           };
 
-    return { nodes, edges, chains, stats };
+    return { nodes, edges, chains, coupling, stats };
   },
 
   async _pickOpenPath(win) {

@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased
+## 1.9.0
+
+A major release focused on discovering the right papers and on a calmer, clearer interface.
+
+**Discover new papers (live search).** A new Discover tab searches OpenAlex on demand in three directions: papers that cite yours (how you find brand-new work building on your reading list), papers on your collection's topics (parallel literature that may not cite yours at all), and OpenAlex's related works. Every result explains itself with reason chips ("cites 3 of yours", topic tags, "related x2"), a Published time filter (Any time / Last 2, 5, 10 years / a custom year), one-click Add to Zotero, and Show on map (a violet-haloed dot that you can just as easily remove again). Only anonymous OpenAlex IDs are ever sent, never your notes, tags or text.
+
+**Suggested and Discover are separate, clearly-labelled tabs.** Suggested is computed instantly from your own papers' reference lists (offline, no web search): the works several of your papers already cite but you don't own, ranked by both how many of your papers cite them and how well their topics match your collection. Discover is the live web search above. Each tab opens with a short line explaining the difference.
+
+**Colour modes and a self-explanatory legend.** Dots are coloured by type by default (library, suggested, no data). The Display control can instead colour by journal (publisher brand rims), publication year, citation cluster, or open-access status, and shows a small preview of each mode. The toolbar legend always spells out the current colours, with a hover explanation for every entry (including what Gold, Green, Hybrid, Bronze and Closed access mean).
+
+**A layout that reflects citation structure.** Papers are grouped into connected citation clusters, each laid out as its own island so hubs sit in the middle with their citing papers around the edge. A Timeline mode arranges papers into one readable column per publication year. Bibliographic-coupling links (an optional dashed layer) connect two of your papers that share many references, and a Filter control dims papers outside a year range or a chosen Zotero tag without touching the layout.
+
+**A calmer, clearer sidebar.** Details for a selected paper now appear in a small movable card over the map, so the sidebar lists never jump around. The sidebar itself can be resized by dragging its edge or hidden with a chevron. Rebuilding a collection you have mapped before marks what is new since last time with a gold star on the map and a NEW chip in the lists.
+
+**Guidance.** A brief, non-blocking first-run tour points at each feature in place; people upgrading get a short "what's new" pass. Kind, dismissible notices explain when a map cannot look its best (too few papers, missing DOIs, no internal citations) and when the connection is slow or offline.
+
+**Hide review articles.** A prominent toggle in the toolbar de-emphasises review / secondary-literature papers (systematic reviews, meta-analyses, and the like) so you can focus on primary research: on the map they are hidden, and in the Suggested, Discover and My papers lists they are kept but greyed out and italicised (sorted to the bottom) so you never lose track of them. Reviews are detected robustly from OpenAlex's own work type, a targeted title check (systematic review, meta-analysis, "recent advances in …", …) and review-journal venue names (Nature Reviews, Chemical Reviews, Annual Review of …, Trends in …, Current Opinion in …), and are always labelled with a small "review" flag wherever they appear; the My papers panel also has its own "Hide review articles" checkbox.
+
+**Under the hood.** The view's structural layout is applied directly so it survives even if the stylesheet fails to load; the map canvas is kept out of the layout flow to prevent a rare "canvas too large" failure; large collections use a spatial grid and a size warning; and the OpenAlex cache gained work-type, topic, keyword, related-works and open-access fields (the first build after updating refetches once).
+
+## 1.8.2
 
 - Two scale sliders in the toolbar: **Spacing** (distance between papers)
   and **Lines** (thickness of the citation lines). Both are remembered

@@ -45,7 +45,14 @@
   padding: 10px 16px;
   border-bottom: 1px solid var(--zcm-line);
   background: var(--zcm-panel);
+  /* Never let a tall (wrapped) toolbar eat the whole tab: cap it and let it
+   * scroll, so the map + sidebar below always keep their space. Before this
+   * cap, adding controls could wrap the toolbar until `.zcm-main` (which
+   * takes the leftover height) collapsed to nothing — the map AND sidebar
+   * would both vanish, leaving only the toolbar. */
   flex: 0 0 auto;
+  max-height: 45%;
+  overflow-y: auto;
 }
 
 .zcm-ctl {
@@ -189,7 +196,11 @@
 .zcm-main {
   display: flex;
   flex: 1 1 auto;
-  min-height: 0;
+  /* A floor so the map + sidebar are ALWAYS visible: if the tab ever
+   * reports a collapsed/auto height (so flex:1 would resolve to 0) or the
+   * toolbar is unusually tall, main still shows this much rather than
+   * vanishing. In a normal, tall tab flex:1 grows it well past this. */
+  min-height: 260px;
 }
 
 .zcm-stage {
@@ -231,11 +242,22 @@
   flex: 0 0 320px;
   border-left: 1px solid var(--zcm-line);
   background: var(--zcm-panel);
-  overflow-y: auto;
+  overflow: hidden; /* the inner .zcm-side-scroll scrolls; tabs stay pinned */
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+/* the scrolling region below the pinned tabs */
+.zcm-side-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 2px; /* room for the scrollbar */
 }
 
 .zcm-card {
@@ -243,6 +265,13 @@
   border-radius: 10px;
   background: var(--zcm-panel-2);
   padding: 12px;
+}
+
+/* a tab panel that stacks several cards (e.g. Suggested = list + Discover) */
+.zcm-panel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .zcm-card-head {
@@ -279,7 +308,8 @@
 
 .zcm-row-meta {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap; /* reason chips (cites/related/topics/year) wrap, not clip */
+  gap: 6px 8px;
   align-items: center;
   margin-bottom: 3px;
 }
@@ -470,6 +500,7 @@
 
 .zcm-chips {
   display: flex;
+  flex-wrap: wrap; /* chips (incl. long topic names) wrap instead of overflowing */
   gap: 6px;
   margin-bottom: 8px;
 }
@@ -1004,13 +1035,14 @@
 
 .zcm-tab {
   flex: 1 1 0;
+  min-width: 0; /* four tabs share the row without clipping */
   appearance: none;
   border: none;
   background: transparent;
   color: var(--zcm-muted);
   font: inherit;
-  font-size: 12px;
-  padding: 7px 4px;
+  font-size: 11.5px;
+  padding: 7px 3px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -1068,52 +1100,88 @@
   white-space: nowrap;
 }
 
-/* ------------------------------------------------------------ quick tour */
+/* ---------------------------------------------- coachmarks (tour / what's new)
+ * Anchored, non-modal walkthrough: a spotlight ring highlights one element
+ * while a small card explains it, positioned next to the target. The ring's
+ * huge spread-shadow dims everything except the highlighted element.
+ */
 
-.zcm-tour {
-  width: min(440px, 88%);
+.zcm-cm-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  /* Click-THROUGH: the map, toolbar and sidebar stay usable during the
+   * tour. Only the card (below) re-enables pointer events, so a stale or
+   * mispositioned card can never lock the user out of the view. */
+  pointer-events: none;
+}
+
+/* uniform dim for centered (targetless) steps */
+.zcm-cm-overlay.zcm-cm-dim {
+  background: rgba(6, 10, 20, 0.45);
+}
+
+.zcm-cm-ring {
+  position: absolute;
+  border-radius: 10px;
+  border: 2px solid var(--zcm-teal);
+  box-shadow: 0 0 0 4px rgba(70, 211, 194, 0.3),
+    0 0 0 9999px rgba(6, 10, 20, 0.45);
+  pointer-events: none;
+  transition: left 0.22s ease, top 0.22s ease, width 0.22s ease,
+    height 0.22s ease;
+}
+
+.zcm-cm-card {
+  position: absolute;
+  width: min(300px, 78vw);
   background: var(--zcm-panel);
   border: 1px solid var(--zcm-line);
-  border-radius: 14px;
-  padding: 20px 24px 16px;
+  border-radius: 12px;
+  padding: 15px 16px 12px;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 9px;
+  pointer-events: auto; /* the one interactive part of the overlay */
+  transition: left 0.2s ease, top 0.2s ease;
 }
 
-.zcm-tour-title {
+.zcm-cm-title {
   font-family: Georgia, "Iowan Old Style", serif;
-  font-size: 16px;
+  font-size: 15px;
+  color: var(--zcm-text);
 }
 
-.zcm-tour-body {
-  min-height: 84px;
-}
-.zcm-tour-body .zcm-guide-p {
-  font-size: 13px;
+.zcm-cm-body {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--zcm-muted);
 }
 
+.zcm-cm-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+/* progress dots (shared by the coachmark cards) */
 .zcm-tour-dots {
   display: flex;
   justify-content: center;
-  gap: 7px;
+  gap: 6px;
 }
 
 .zcm-tour-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--zcm-line);
 }
 .zcm-tour-dot.zcm-on {
   background: var(--zcm-teal);
-}
-
-.zcm-tour-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 4px;
+  transform: scale(1.25);
 }
 
 /* -------------------------------------------- main-window toolbar button
@@ -1131,4 +1199,954 @@
   stroke: currentColor;
   width: 16px;
   height: 16px;
+}
+
+/* ==================================================== v1.9: discover & display
+ * Styles for the Discover search, toolbar popovers (Display / Filter),
+ * reason chips, NEW markers and the What's-new overlay.
+ */
+
+.zcm-root {
+  --zcm-violet: #8b7ff0; /* discover finds + coupling links */
+  --zcm-gold: #ffd97a;   /* "new since last build" marker */
+  position: relative;    /* anchors the toolbar popovers */
+}
+
+/* ---- toolbar popovers */
+
+.zcm-popover {
+  position: absolute;
+  z-index: 60;
+  min-width: 240px;
+  max-width: 320px;
+  padding: 12px;
+  border: 1px solid var(--zcm-line);
+  border-radius: 10px;
+  background: var(--zcm-panel-2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.zcm-pop-head {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--zcm-muted);
+  margin: 10px 0 6px;
+}
+.zcm-pop-head:first-child {
+  margin-top: 0;
+}
+
+.zcm-pop-sub {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--zcm-muted);
+  margin-bottom: 8px;
+}
+
+.zcm-pop-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border: 1px solid var(--zcm-line);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.zcm-pop-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.zcm-pop-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.zcm-pop-year {
+  width: 74px;
+  padding: 4px 6px;
+  border: 1px solid var(--zcm-line);
+  border-radius: 6px;
+  background: var(--zcm-bg);
+  color: var(--zcm-text);
+  font-size: 12px;
+}
+.zcm-pop-year:focus {
+  border-color: var(--zcm-teal);
+  outline: none;
+}
+
+.zcm-pop-dash {
+  color: var(--zcm-muted);
+  padding: 0 4px;
+}
+
+.zcm-pop-yearrow {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.zcm-pop-select {
+  width: 100%;
+  padding: 5px 6px;
+  margin-bottom: 10px;
+  border: 1px solid var(--zcm-line);
+  border-radius: 6px;
+  background: var(--zcm-bg);
+  color: var(--zcm-text);
+  font-size: 12px;
+}
+
+.zcm-btn-active {
+  border-color: var(--zcm-teal);
+  color: var(--zcm-teal);
+}
+
+/* year-gradient legend swatch */
+.zcm-legend-grad {
+  display: inline-block;
+  width: 64px;
+  height: 8px;
+  border-radius: 4px;
+  margin: 0 6px;
+  background: linear-gradient(
+    90deg,
+    hsl(215, 70%, 58%),
+    hsl(130, 60%, 60%),
+    hsl(45, 80%, 64%)
+  );
+}
+
+/* ---- reason chips & markers */
+
+.zcm-new-chip {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--zcm-gold);
+  color: var(--zcm-bg);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.zcm-topic-tag {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1px solid var(--zcm-violet);
+  border-radius: 9px;
+  color: var(--zcm-violet);
+  font-size: 10px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zcm-badge-cites {
+  background: var(--zcm-violet);
+}
+
+.zcm-badge-rel {
+  background: var(--zcm-slate);
+  color: var(--zcm-text);
+}
+
+.zcm-d-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+/* ---- discover card */
+
+.zcm-discover-label {
+  font-size: 11px;
+  color: var(--zcm-muted);
+  margin: 8px 0 4px;
+}
+
+/* Topic chips carry natural-language names, so use the sans font, left-align,
+ * and let long names sit on their own line rather than truncating mid-word. */
+.zcm-topic-chips .zcm-chip {
+  font: 11px -apple-system, "Segoe UI", system-ui, sans-serif;
+  max-width: 100%;
+  padding: 3px 10px;
+  text-align: left;
+  justify-content: flex-start;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.zcm-discover-terms {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--zcm-muted);
+  font-style: italic;
+  margin: 6px 0;
+}
+
+.zcm-discover-opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.zcm-discover-run {
+  width: 100%;
+  margin: 4px 0 8px;
+}
+
+.zcm-discover-status {
+  font-size: 11px;
+  color: var(--zcm-muted);
+  min-height: 14px;
+  margin-bottom: 6px;
+}
+
+.zcm-discover-row .zcm-d-actions {
+  margin-top: 6px;
+}
+
+.zcm-discover-err {
+  color: var(--zcm-amber) !important;
+}
+
+/* ---- map notices (network health, collection advice) */
+
+.zcm-notices {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 58px; /* clear the floating +/−/⌂/? controls */
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.zcm-notice {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.45;
+  border: 1px solid var(--zcm-line);
+  background: var(--zcm-panel);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.zcm-notice-advice {
+  border-left: 3px solid var(--zcm-teal);
+}
+.zcm-notice-warn {
+  border-left: 3px solid var(--zcm-amber);
+}
+
+.zcm-notice-text {
+  flex: 1;
+  color: var(--zcm-text);
+}
+
+.zcm-notice-close {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--zcm-muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 5px;
+}
+.zcm-notice-close:hover {
+  background: var(--zcm-panel-2);
+  color: var(--zcm-text);
+}
+
+/* ---- build-screen network warning */
+
+.zcm-progress-warn {
+  display: none;
+  max-width: 460px;
+  margin: 4px auto 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--zcm-text);
+  background: var(--zcm-panel-2);
+  border-left: 3px solid var(--zcm-amber);
+}
+
+/* ================================================= 1.9.0: UX pass
+ * Sidebar collapse/resize, floating details card, reorganized Suggested +
+ * Discover, and supporting bits. Cosmetic only — structural layout for these
+ * regions is asserted inline in graphView.js.
+ */
+
+/* ---- sidebar resize divider + collapse/reopen */
+.zcm-side-resizer {
+  flex: 0 0 6px;
+  position: relative;
+  cursor: col-resize;
+  background: transparent;
+  border-left: 1px solid var(--zcm-line);
+}
+.zcm-side-resizer:hover {
+  background: rgba(70, 211, 194, 0.12);
+}
+.zcm-side-grip {
+  position: absolute;
+  top: 50%;
+  left: 1px;
+  width: 3px;
+  height: 34px;
+  margin-top: -17px;
+  border-radius: 3px;
+  background: var(--zcm-line);
+}
+.zcm-side-collapse {
+  position: absolute;
+  top: 10px;
+  left: -11px;
+  width: 20px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--zcm-line);
+  border-radius: 6px;
+  background: var(--zcm-panel-2);
+  color: var(--zcm-muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 24px;
+  z-index: 5;
+}
+.zcm-side-collapse:hover {
+  color: var(--zcm-text);
+  border-color: var(--zcm-teal);
+}
+.zcm-side-reopen {
+  display: none; /* shown (flex) by JS when collapsed */
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-left: 1px solid var(--zcm-line);
+  background: var(--zcm-panel);
+  color: var(--zcm-muted);
+  cursor: pointer;
+  font-size: 14px;
+}
+.zcm-side-reopen:hover {
+  color: var(--zcm-text);
+  background: var(--zcm-panel-2);
+}
+
+/* ---- floating paper-details card over the map */
+.zcm-detail-card {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 30;
+  display: none; /* flex when shown, via JS */
+  flex-direction: column;
+  width: min(320px, 78%);
+  max-height: 70%;
+  border: 1px solid var(--zcm-line);
+  border-radius: 12px;
+  background: var(--zcm-panel);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.zcm-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 8px 7px 12px;
+  border-bottom: 1px solid var(--zcm-line);
+  background: var(--zcm-panel-2);
+  cursor: move;
+  flex: 0 0 auto;
+}
+.zcm-detail-drag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--zcm-muted);
+  user-select: none;
+}
+.zcm-detail-close {
+  border: none;
+  background: transparent;
+  color: var(--zcm-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.zcm-detail-close:hover {
+  background: var(--zcm-panel);
+  color: var(--zcm-text);
+}
+.zcm-detail-body {
+  padding: 12px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ---- unified suggestion controls (Section A of the Suggested tab) */
+.zcm-sugg-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 4px;
+  padding: 8px;
+  border: 1px solid var(--zcm-line);
+  border-radius: 8px;
+  background: var(--zcm-panel);
+}
+.zcm-sugg-ctl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.zcm-ctl-hint {
+  font-size: 11px;
+  color: var(--zcm-muted);
+}
+
+/* ---- Discover: section headers, sources, time, clear */
+.zcm-card-badge {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: var(--zcm-violet);
+  color: var(--zcm-bg);
+  vertical-align: middle;
+}
+.zcm-discover-h {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--zcm-muted);
+  margin: 12px 0 5px;
+}
+.zcm-discover-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.zcm-discover-source {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12.5px;
+  cursor: pointer;
+  line-height: 1.35;
+}
+.zcm-discover-source input {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+.zcm-discover-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.zcm-discover-select {
+  padding: 5px 6px;
+  border: 1px solid var(--zcm-line);
+  border-radius: 6px;
+  background: var(--zcm-bg);
+  color: var(--zcm-text);
+  font-size: 12.5px;
+}
+.zcm-discover-select:focus {
+  border-color: var(--zcm-teal);
+  outline: none;
+}
+.zcm-discover-year {
+  width: 84px;
+  padding: 5px 6px;
+  border: 1px solid var(--zcm-line);
+  border-radius: 6px;
+  background: var(--zcm-bg);
+  color: var(--zcm-text);
+  font-size: 12.5px;
+}
+.zcm-discover-clear {
+  display: none; /* block when injected papers exist, via JS */
+  width: 100%;
+  margin: 8px 0 0;
+  font-size: 11.5px;
+}
+
+/* ---- non-blocking inline feedback (replaces modal alerts) */
+.zcm-inline-msg {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--zcm-text);
+  background: var(--zcm-panel);
+  border-left: 3px solid var(--zcm-amber);
+}
+.zcm-btn-done {
+  border-color: var(--zcm-teal) !important;
+  color: var(--zcm-teal) !important;
+}
+
+/* ================================================= 1.9.0: tabs / display / polish */
+
+/* Display popover: a vertical list of color modes, each with a preview swatch
+ * so it's self-explanatory without hovering. */
+.zcm-pop-modelist {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid var(--zcm-line);
+  border-radius: 8px;
+  padding: 4px;
+}
+.zcm-pop-mode {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--zcm-muted);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  padding: 5px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.zcm-pop-mode:hover {
+  background: rgba(147, 161, 199, 0.08);
+}
+.zcm-pop-mode.zcm-on {
+  background: var(--zcm-panel-2);
+  color: var(--zcm-text);
+  box-shadow: inset 2px 0 0 var(--zcm-teal);
+}
+.zcm-pop-mode-label {
+  flex: 1 1 auto;
+}
+.zcm-pop-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 46px;
+  width: 46px;
+}
+
+/* Filter popover: labelled From/To year fields */
+.zcm-pop-yearfield {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.zcm-pop-yearlabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--zcm-muted);
+}
+
+/* Floating details card: consistent vertical rhythm; the notes preview is a
+ * touch shorter here so it can't dominate the small card. */
+.zcm-detail-body > *:first-child {
+  margin-top: 0;
+}
+.zcm-detail-body .zcm-note-preview {
+  max-height: 180px;
+}
+
+/* ============================================ v1.9.0: sidebar visual refinement
+ * A calmer, more consistent right-hand panel. These rules come last, so they
+ * refine the earlier ones for the sidebar/discover/detail regions.
+ */
+
+/* Cards: a touch more air and a softer, flatter look */
+.zcm-side {
+  padding: 14px;
+  gap: 14px;
+}
+.zcm-card {
+  padding: 14px;
+  border-radius: 12px;
+  border-color: rgba(147, 161, 199, 0.12);
+}
+.zcm-card-head {
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.zcm-card-sub {
+  font-size: 12px;
+  line-height: 1.55;
+  margin-bottom: 12px;
+}
+.zcm-panel-stack {
+  gap: 14px;
+}
+
+/* Tabs: quieter, with a clear active underline */
+.zcm-tabs {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--zcm-line);
+  border-radius: 0;
+  gap: 2px;
+}
+.zcm-tab {
+  border-radius: 7px 7px 0 0;
+  padding: 8px 4px;
+  font-size: 12px;
+}
+.zcm-tab.zcm-on {
+  background: transparent;
+  box-shadow: inset 0 -2px 0 var(--zcm-teal);
+}
+
+/* Section headers inside Discover / controls: consistent rhythm */
+.zcm-discover-h {
+  font-size: 10.5px;
+  margin: 14px 0 6px;
+  color: var(--zcm-muted);
+}
+.zcm-discover-h:first-of-type {
+  margin-top: 4px;
+}
+
+/* Suggested-tab control box */
+.zcm-sugg-controls {
+  gap: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--zcm-panel);
+  border-color: rgba(147, 161, 199, 0.12);
+}
+.zcm-sugg-ctl-row {
+  gap: 10px;
+  justify-content: space-between;
+}
+.zcm-sugg-list {
+  margin-top: 4px;
+}
+
+/* Source checkboxes */
+.zcm-discover-sources {
+  gap: 7px;
+  margin-bottom: 2px;
+}
+.zcm-discover-source {
+  gap: 9px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+/* Time row */
+.zcm-discover-time {
+  gap: 8px;
+}
+.zcm-discover-select,
+.zcm-discover-year {
+  padding: 6px 8px;
+  border-radius: 7px;
+}
+
+/* Topic selector: a tidy vertical toggle list; long names wrap and always fit */
+.zcm-topic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid rgba(147, 161, 199, 0.12);
+  border-radius: 9px;
+  padding: 4px;
+}
+.zcm-topic-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.zcm-topic-row:hover {
+  background: rgba(147, 161, 199, 0.07);
+}
+.zcm-topic-row input {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+.zcm-topic-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+/* italic, teal "used by N papers" note after each topic name */
+.zcm-topic-used {
+  font-style: italic;
+  color: var(--zcm-teal);
+  font-size: 11.5px;
+}
+
+/* Matched-topic reason tags: wrap fully instead of truncating */
+.zcm-topic-tag {
+  max-width: 100%;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.3;
+}
+
+/* Key terms line */
+.zcm-discover-terms {
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 10px 0 2px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(147, 161, 199, 0.1);
+}
+
+/* Search button: prominent, full width */
+.zcm-discover-run {
+  width: 100%;
+  margin: 14px 0 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+
+/* Result / suggestion rows: hairline separators for scannability */
+.zcm-sugg-list .zcm-row,
+.zcm-discover-results .zcm-row {
+  border-bottom: 1px solid rgba(147, 161, 199, 0.08);
+}
+.zcm-sugg-list .zcm-row:last-child,
+.zcm-discover-results .zcm-row:last-child {
+  border-bottom: none;
+}
+.zcm-row-title {
+  line-height: 1.4;
+}
+.zcm-row-sub {
+  font-size: 11.5px;
+  color: var(--zcm-muted);
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+/* ---- floating details card: roomy, with even vertical rhythm */
+.zcm-detail-card {
+  width: min(400px, 88%);
+  max-height: 82%;
+  border-radius: 14px;
+}
+.zcm-detail-head {
+  padding: 10px 12px 10px 18px;
+}
+.zcm-detail-body {
+  padding: 18px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* a clearly-visible round close (×) button */
+.zcm-detail-close {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 18px;
+  line-height: 24px;
+  color: var(--zcm-muted);
+  background: transparent;
+  border: 1px solid transparent;
+}
+.zcm-detail-close:hover {
+  color: var(--zcm-text);
+  background: var(--zcm-panel);
+  border-color: var(--zcm-line);
+}
+
+/* the children set their own margins for the old sidebar context; the flex
+ * gap above governs spacing here, so neutralise stacked margins */
+.zcm-detail-body > * {
+  margin: 0;
+}
+.zcm-detail-body .zcm-d-title {
+  font-size: 15px;
+  line-height: 1.35;
+}
+.zcm-detail-body .zcm-d-actions {
+  margin-top: 4px;
+  gap: 8px;
+}
+.zcm-detail-body .zcm-note-preview {
+  max-height: 200px;
+}
+
+/* Discover result title: clickable to open the floating preview */
+.zcm-row-preview {
+  cursor: pointer;
+}
+.zcm-row-preview:hover {
+  color: var(--zcm-teal);
+}
+
+/* Filter popover: in-DOM tag list (replaces the native <select> that broke
+ * inside the popover) */
+.zcm-filter-taglist {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid rgba(147, 161, 199, 0.14);
+  border-radius: 8px;
+  padding: 4px;
+  margin-bottom: 8px;
+}
+.zcm-filter-tagrow {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--zcm-text);
+  text-align: left;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.zcm-filter-tagrow:hover {
+  background: rgba(147, 161, 199, 0.09);
+}
+.zcm-filter-tagrow.zcm-on {
+  background: var(--zcm-teal);
+  color: var(--zcm-bg);
+}
+.zcm-filter-clear {
+  width: 100%;
+}
+
+/* ============================================ review articles: toggle + chip */
+
+/* Toolbar "Hide reviews" toggle: clearly visible, with an obvious ON state */
+.zcm-review-toggle {
+  gap: 6px;
+  font-weight: 600;
+}
+.zcm-review-toggle::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 50%;
+  border: 1.5px solid var(--zcm-muted);
+  background: transparent;
+  vertical-align: -1px;
+}
+.zcm-review-toggle.zcm-on {
+  border-color: var(--zcm-amber);
+  color: var(--zcm-amber);
+  background: rgba(240, 166, 63, 0.12);
+}
+.zcm-review-toggle.zcm-on::before {
+  border-color: var(--zcm-amber);
+  background: var(--zcm-amber);
+}
+
+/* the small "review" label chip used in lists and the details card */
+.zcm-review-chip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #2a1c05;
+  background: #d9a441;
+  white-space: nowrap;
+}
+
+/* details-card header row holding the kind label + review/new chips */
+.zcm-d-kindrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* "Hide review articles" checkbox row in the My papers panel */
+.zcm-papers-reviewrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--zcm-muted);
+  margin: -2px 0 6px;
+  cursor: pointer;
+}
+.zcm-papers-reviewrow input {
+  flex: 0 0 auto;
+}
+
+/* When "Hide reviews" is on, review rows stay in the lists but are clearly
+ * de-emphasised: greyed + italic (they keep their "review" flag chip). */
+.zcm-hide-reviews .zcm-is-review {
+  opacity: 0.5;
+  font-style: italic;
+}
+.zcm-hide-reviews .zcm-is-review .zcm-row-title {
+  font-style: italic;
+  color: var(--zcm-muted);
+}
+/* the flag itself shouldn't be dimmed into invisibility */
+.zcm-hide-reviews .zcm-is-review .zcm-review-chip {
+  opacity: 1;
+  font-style: normal;
 }

@@ -11,6 +11,12 @@
 
 var CitationMap; // namespace object populated by the loaded modules
 
+// Build marker: the manifest version stays 1.9.0 across dev builds, so this
+// distinct string is how we can confirm (in Debug Output and in the map's
+// status bar) that the CURRENTLY RUNNING code is the latest build and not a
+// stale copy Zotero kept from an earlier same-version install.
+var CITMAP_BUILD = "2026-08-03-tour-reviews";
+
 function log(msg) {
   Zotero.debug("[Citation Map] " + msg);
 }
@@ -28,10 +34,10 @@ function install() {
 }
 
 async function startup({ id, version, rootURI }) {
-  log(`Starting v${version}`);
+  log(`Starting v${version} build=${CITMAP_BUILD}`);
 
   // Shared namespace for all plugin modules.
-  CitationMap = { rootURI, id, version };
+  CitationMap = { rootURI, id, version, build: CITMAP_BUILD };
 
   // Order matters: later modules may reference earlier ones.
   loadModule(rootURI, "modules/dataSource.js", CitationMap);
