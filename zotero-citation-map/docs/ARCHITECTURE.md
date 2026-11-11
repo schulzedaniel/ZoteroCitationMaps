@@ -71,12 +71,25 @@ Zotero items ──DOIs──▶ dataSource.fetchWorksByDOI ──▶ OpenAlex r
      merges three ranked sources — forward citations, topic search,
      related works — into explainable result entries.
 4. **graphView.js** renders into a `<canvas>`:
-   - a small custom force simulation (pairwise repulsion, edge springs,
-     centering, friction) — O(n²) per tick for typical collections, with a
+   - a small custom force simulation (pairwise repulsion, edge springs
+     within an island, anchoring, friction; islands are built from links
+     between library papers only and suggestions rest on their biggest
+     citer's island) — O(n²) per tick for typical collections, with a
      uniform spatial hash (`_forEachClosePair`) taking over repulsion and
      collision above ~150–200 nodes so large maps stay responsive;
-   - *timeline mode* replaces the centering force with a spring towards
-     `x = f(publication_year)`, producing the "year rail";
+   - *timeline mode* (the default view, `layoutMode` pref) is a chart:
+     `_computeTimelineLayout` puts each populated year in a column band
+     (empty years skipped) and a paper at the height of its citation count
+     on a log scale (`yMetric`: worldwide or within the map), beeswarming
+     overlapping dots sideways inside their band; `_draw` adds gridlines,
+     axis labels and curved edges. The network layout always settles first
+     (`_preSettle` + `_compactIslands`), so switching back glides to stable
+     islands via the remembered `_netX/_netY`;
+   - *focus*: hovering/selecting a paper colours its links by direction
+     (`FOCUS_COLORS`: blue = cites, pink = cited by), the details card lists
+     both (`_appendLinkLists`), and `_drawMapKey` keeps a one-line key of the
+     current encoding in the corner; labels are placed greedily by priority
+     with collision skipping;
    - *color modes* (`_nodeFill`): `kind` (the neutral default — by paper
      type), publisher rims, year gradient, cluster palette or open-access
      status, with an adaptive, tooltipped toolbar legend (`_renderLegend`),

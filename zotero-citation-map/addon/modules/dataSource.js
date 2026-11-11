@@ -5,7 +5,8 @@
  *   Zotero stores your papers' metadata but NOT their reference lists.
  *   OpenAlex (https://openalex.org) is a free, open scholarly index that
  *   returns, for each work, the list of works it references
- *   (`referenced_works`). No API key required.
+ *   (`referenced_works`). Works without an API key on a small daily
+ *   budget; an optional free key (pref `apiKey`) raises it about tenfold.
  *
  * Responsibilities of this module:
  *   - Resolve DOIs of library items to OpenAlex work records (batched).
@@ -21,7 +22,7 @@
 
 this.DataSource = {
   API_BASE: "https://api.openalex.org",
-  BATCH_SIZE: 50, // OpenAlex allows up to 50 IDs per filter query
+  BATCH_SIZE: 50, // values per OR filter (OpenAlex allows up to 100)
   // Bump when FIELDS/_slim change shape: old cached records lack the new
   // fields, so the whole cache is discarded and refetched once.
   CACHE_VERSION: 3,
@@ -76,6 +77,22 @@ this.DataSource = {
     this._cache.version = this.CACHE_VERSION;
     if (!this._cache.works) this._cache.works = {};
     if (!this._cache.snapshots) this._cache.snapshots = {};
+    this._pruneCache();
+  },
+
+  /**
+   * Drop records far past their TTL. Stale records are still useful as an
+   * offline fallback for a while (see _cacheGet), but without a bound the
+   * file only ever grows and every save rewrites all of it.
+   */
+  _pruneCache() {
+    const days =
+      Zotero.Prefs.get("extensions.citation-map.cacheDays", true) || 30;
+    const keepMs = Math.max(90, days * 4) * 24 * 3600 * 1000;
+    const now = Date.now();
+    for (const [key, entry] of Object.entries(this._cache.works)) {
+      if (!entry || !(now - entry.fetched < keepMs)) delete this._cache.works[key];
+    }
   },
 
   async saveCache() {
@@ -112,9 +129,15 @@ this.DataSource = {
     await this.saveCache();
   },
 
-  _cacheGet(key) {
+  /**
+   * A cached record, or null if absent or older than cacheDays. With
+   * `allowStale`, an expired record is returned too: the fallback when a
+   * refetch failed, so a map built online keeps working offline.
+   */
+  _cacheGet(key, allowStale = false) {
     const entry = this._cache.works[key];
     if (!entry) return null;
+    if (allowStale) return entry.record;
     const maxAgeDays =
       Zotero.Prefs.get("extensions.citation-map.cacheDays", true) || 30;
     const ageMs = Date.now() - entry.fetched;
@@ -133,18 +156,61 @@ this.DataSource = {
     return mail ? `&mailto=${encodeURIComponent(mail)}` : "";
   },
 
+  /** The optional OpenAlex API key (a credential, never user text). */
+  _apiKey() {
+    try {
+      return String(
+        Zotero.Prefs.get("extensions.citation-map.apiKey", true) || ""
+      ).trim();
+    } catch (e) {
+      return "";
+    }
+  },
+
   // -------------------------------------------------------- network health
   //
   // Sticky per-operation state so the UI can tell the user WHY things are
-  // slow or empty. "slow" = a request succeeded but took > SLOW_MS;
-  // "offline" = a request failed even after the retry (no connection, DNS
-  // failure, or OpenAlex down — indistinguishable from here).
+  // slow or empty:
+  //   "slow"    a request succeeded but took > SLOW_MS
+  //   "offline" no response even after the retry (no connection, DNS)
+  //   "limited" OpenAlex refused: daily budget used up (429) or API key
+  //             rejected (401/403); further requests this run are skipped
+  //   "error"   OpenAlex answered with a server error (5xx) twice
 
   SLOW_MS: 8000, // a successful request slower than this flags "slow"
-  netState: "ok", // "ok" | "slow" | "offline"
+  netState: "ok", // "ok" | "slow" | "offline" | "limited" | "error"
+  lastStatus: 0, // HTTP status behind a "limited" state
 
   resetNetState() {
     this.netState = "ok";
+    this.lastStatus = 0;
+  },
+
+  /** A plain-language explanation of a bad netState ("" when all is well). */
+  netMessage() {
+    switch (this.netState) {
+      case "offline":
+        return (
+          "OpenAlex can't be reached, you appear to be offline. Using " +
+          "locally cached data where possible."
+        );
+      case "limited":
+        if ((this.lastStatus === 401 || this.lastStatus === 403) && this._apiKey()) {
+          return (
+            "OpenAlex rejected the API key saved in Citation Map. Check it " +
+            "(or clear it) and try again."
+          );
+        }
+        return (
+          "OpenAlex's free daily allowance for your network is used up (it " +
+          "resets at midnight UTC). A free OpenAlex API key raises it " +
+          "about tenfold."
+        );
+      case "error":
+        return "OpenAlex is having problems right now, please try again later.";
+      default:
+        return "";
+    }
   },
 
   /**
@@ -154,20 +220,49 @@ this.DataSource = {
    * their data — the UI shows a "slow connection" hint instead of failing.
    */
   async _getJSON(url) {
+    // Once OpenAlex has refused, every further request this run would be
+    // refused too: stop asking (and spending the user's budget).
+    if (this.netState === "limited") {
+      throw new Error("OpenAlex refused earlier requests (" + this.lastStatus + ")");
+    }
+    const headers = { Accept: "application/json" };
+    const key = this._apiKey();
+    if (key) headers.Authorization = "Bearer " + key;
     for (let attempt = 0; attempt < 2; attempt++) {
       const t0 = Date.now();
       try {
         const req = await Zotero.HTTP.request("GET", url, {
-          headers: { Accept: "application/json" },
+          headers,
           timeout: 60000,
+          // Zotero 10 retries 429/5xx on its own for up to an hour (and
+          // sleeps on Retry-After without limit), so a used-up OpenAlex
+          // budget looked like a frozen progress bar. Fail fast and handle
+          // the status here; older Zotero versions ignore these options.
+          errorDelayMax: 0,
+          noRetryOnThrottle: true,
         });
         if (Date.now() - t0 > this.SLOW_MS && this.netState === "ok") {
           this.netState = "slow";
         }
         return JSON.parse(req.responseText);
       } catch (e) {
+        const status = (e && e.status) || 0;
+        if (status === 429 || status === 401 || status === 403) {
+          this.netState = "limited";
+          this.lastStatus = status;
+          throw e;
+        }
+        if (status >= 400 && status < 500) {
+          // A malformed request (e.g. an odd DOI in the filter): retrying
+          // can't help, and it says nothing about the connection.
+          Zotero.debug(
+            "[Citation Map] OpenAlex " + status + ": " +
+              String((e.xmlhttp && e.xmlhttp.responseText) || "").slice(0, 300)
+          );
+          throw e;
+        }
         if (attempt === 1) {
-          this.netState = "offline";
+          this.netState = status >= 500 ? "error" : "offline";
           throw e;
         }
         await Zotero.Promise.delay(1500); // brief back-off, then retry
@@ -176,14 +271,53 @@ this.DataSource = {
     return null;
   },
 
-  /** Normalize a DOI to the bare lowercase form OpenAlex expects. */
+  /**
+   * Normalize a DOI to the bare lowercase form OpenAlex expects, or null if
+   * there is no DOI in it. Handles what people paste into the DOI field:
+   * "doi: 10.x/…", "https://doi.org/…", "DOI 10.x/…", trailing punctuation.
+   */
   normalizeDOI(doi) {
     if (!doi) return null;
-    return doi
+    let d = String(doi).trim();
+    try {
+      // Zotero's own cleaner pulls the 10.xxxx/… part out of any wrapping
+      if (Zotero.Utilities && typeof Zotero.Utilities.cleanDOI === "function") {
+        const c = Zotero.Utilities.cleanDOI(d);
+        if (c) d = c;
+      }
+    } catch (e) {
+      /* fall back to the patterns below */
+    }
+    d = d
+      .replace(/^https?:\/\/(dx\.|www\.)?doi\.org\//i, "")
+      .replace(/^doi[:\s]\s*/i, "")
+      .replace(/[.,;]+$/, "")
       .trim()
-      .replace(/^https?:\/\/(dx\.)?doi\.org\//i, "")
-      .replace(/^doi:/i, "")
       .toLowerCase();
+    return /^10\.\d{3,9}\/\S+$/.test(d) ? d : null;
+  },
+
+  /**
+   * DOIs that can't go into an OR filter: OpenAlex splits filter values on
+   * "," and "|" (even URL-encoded), so one of these would fail or corrupt
+   * its whole 50-DOI batch. They are looked up one at a time instead.
+   */
+  _batchableDOI(doi) {
+    return !/[,|]/.test(doi);
+  },
+
+  /** Single-work lookup by DOI (null if OpenAlex doesn't know it). */
+  async _fetchOneByDOI(doi) {
+    const url =
+      `${this.API_BASE}/works/https://doi.org/` +
+      doi.split("/").map(encodeURIComponent).join("/") +
+      `?select=${this.FIELDS}${this._mailtoParam()}`;
+    try {
+      return this._slim(await this._getJSON(url));
+    } catch (e) {
+      Zotero.debug("[Citation Map] DOI lookup failed (" + doi + "): " + e);
+      return null;
+    }
   },
 
   // --------------------------------------------------------------- fetching
@@ -208,12 +342,14 @@ this.DataSource = {
     let done = dois.length - missing.length;
     onProgress && onProgress(done, dois.length);
 
-    for (let i = 0; i < missing.length; i += this.BATCH_SIZE) {
-      const batch = missing.slice(i, i + this.BATCH_SIZE);
+    const batchable = missing.filter((d) => this._batchableDOI(d));
+    const singles = missing.filter((d) => !this._batchableDOI(d));
+    for (let i = 0; i < batchable.length; i += this.BATCH_SIZE) {
+      const batch = batchable.slice(i, i + this.BATCH_SIZE);
       const filter = "doi:" + batch.join("|");
       const url =
         `${this.API_BASE}/works?filter=${encodeURIComponent(filter)}` +
-        `&per-page=${this.BATCH_SIZE}&select=${this.FIELDS}${this._mailtoParam()}`;
+        `&per_page=${this.BATCH_SIZE}&select=${this.FIELDS}${this._mailtoParam()}`;
       try {
         const json = await this._getJSON(url);
         for (const work of json.results || []) {
@@ -231,6 +367,25 @@ this.DataSource = {
       done += batch.length;
       onProgress && onProgress(Math.min(done, dois.length), dois.length);
       await Zotero.Promise.delay(120); // stay well inside polite rate limits
+    }
+    for (const doi of singles) {
+      const slim = await this._fetchOneByDOI(doi);
+      if (slim) {
+        result.set(doi, slim);
+        this._cachePut("doi:" + doi, slim);
+        this._cachePut("oa:" + slim.id, slim);
+      }
+      done++;
+      onProgress && onProgress(Math.min(done, dois.length), dois.length);
+      await Zotero.Promise.delay(120);
+    }
+
+    // Anything still missing (offline, refused, server error): fall back to
+    // an expired cache record rather than drawing the paper as "no data".
+    for (const doi of missing) {
+      if (result.has(doi)) continue;
+      const stale = this._cacheGet("doi:" + doi, true);
+      if (stale) result.set(doi, stale);
     }
 
     await this.saveCache();
@@ -256,10 +411,11 @@ this.DataSource = {
 
     for (let i = 0; i < missing.length; i += this.BATCH_SIZE) {
       const batch = missing.slice(i, i + this.BATCH_SIZE);
-      const filter = "openalex_id:" + batch.join("|");
+      // `openalex:` is the documented filter for work IDs (ids.openalex)
+      const filter = "openalex:" + batch.join("|");
       const url =
         `${this.API_BASE}/works?filter=${encodeURIComponent(filter)}` +
-        `&per-page=${this.BATCH_SIZE}&select=${this.FIELDS}${this._mailtoParam()}`;
+        `&per_page=${this.BATCH_SIZE}&select=${this.FIELDS}${this._mailtoParam()}`;
       try {
         const json = await this._getJSON(url);
         for (const work of json.results || []) {
@@ -272,6 +428,11 @@ this.DataSource = {
         Zotero.debug("[Citation Map] OpenAlex ID batch failed: " + e);
       }
       await Zotero.Promise.delay(120);
+    }
+    for (const id of missing) {
+      if (result.has(id)) continue;
+      const stale = this._cacheGet("oa:" + id, true);
+      if (stale) result.set(id, stale);
     }
 
     await this.saveCache();
@@ -359,7 +520,7 @@ this.DataSource = {
       for (let page = 1; page <= pages; page++) {
         const url =
           `${this.API_BASE}/works?filter=${encodeURIComponent(filter)}` +
-          `&per-page=100&page=${page}&sort=${sortKey}` +
+          `&per_page=100&page=${page}&sort=${sortKey}` +
           `&select=${this.FIELDS}${this._mailtoParam()}`;
         try {
           const json = await this._getJSON(url);
@@ -403,7 +564,7 @@ this.DataSource = {
     const perPage = Math.max(10, Math.min(100, opts.perPage || 50));
     const url =
       `${this.API_BASE}/works?filter=${encodeURIComponent(filter)}` +
-      `&per-page=${perPage}&sort=cited_by_count:desc` +
+      `&per_page=${perPage}&sort=cited_by_count:desc` +
       `&select=${this.FIELDS}${this._mailtoParam()}`;
     try {
       const json = await this._getJSON(url);

@@ -3,13 +3,13 @@
     "citation-map@daniel.dev": {
       "updates": [
         {
-          "version": "1.9.0",
-          "update_link": "https://github.com/schulzedaniel/ZoteroCitationMaps/releases/download/v1.9.0/citation-map-1.9.0.xpi",
-          "update_hash": "sha256:13a7b2b798612073ea17bbad09e49a671f41870b7de33d037aab0b5bc750b22b",
+          "version": "1.10.0",
+          "update_link": "https://github.com/schulzedaniel/ZoteroCitationMaps/releases/download/v1.10.0/citation-map-1.10.0.xpi",
+          "update_hash": "sha256:8e9c55f1e4672468c4d1bc4a011fba67605eccf7e66a12384e5a59d3f5bbdb85",
           "applications": {
             "zotero": {
               "strict_min_version": "7.0",
-              "strict_max_version": "9.*"
+              "strict_max_version": "10.*"
             }
           }
         }

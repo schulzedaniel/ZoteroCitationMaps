@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.10.0
+
+**Works with Zotero 10.** Zotero 10 disabled 1.9.0 (its version cap was 9.x), and its multi-select collections pane made the map fail to open whenever several collections were selected. The plugin now uses the new selection API where it exists (and the old one on Zotero 7–9), and multi-selection became a feature: select several collections and map them together. A saved search, *Unfiled Items* or *Duplicates* now maps exactly the items it shows (it used to map the whole library), group libraries are named correctly, the trash and feeds are refused with a clear message, and the collection context-menu label follows the selection.
+
+**A Timeline that reads like a chart, now the default view.** Left → right is the publication year and the *higher* a paper sits, the more it is cited (worldwide, log scale, with gridlines), so the classics sit top-left and fresh work bottom-right, the way Litmaps and the new ResearchRabbit lay out a field. Years stay as columns (empty years are skipped and marked ⋯), dots never overlap, citations curve gently so lines to the same classic fan out, papers without data rest in a strip under the axis, and Display → Timeline height can switch to "cited on this map". The map remembers whether you last used the Timeline or the Network.
+
+**Follow the citations.** Hover or click a paper: blue lines lead to the papers it cites (older work it builds on), pink lines come from the papers citing it (newer work building on it), everything else fades. The details card lists both ("Cites on this map", "Cited by on this map"); hover an entry to light it up, click to walk along the trail. A one-line key in the map's corner always says what position, size and the colored lines mean.
+
+**Easier to read.** Suggestions are drawn as open rings (your papers are filled dots); labels are "Surname Year" and placed so they never pile on top of each other, the focused paper's neighbours and search matches are labelled first; citation lines are lighter; the Network re-packs its islands by their real size (no more empty moats) and labels the block of unlinked papers. The toolbar is calmer: the Spacing and Lines sliders moved into Display, and export / import live under a new More ▾ menu.
+
+**OpenAlex, reliably.** On Zotero 10 a used-up OpenAlex allowance made the build appear frozen for up to an hour (Zotero now retries those responses itself); requests now fail fast and the map explains what happened instead of claiming you're offline. An optional free OpenAlex API key (More ▾ → OpenAlex API key…) raises OpenAlex's daily budget about tenfold; it is sent only to api.openalex.org, as a header. DOIs pasted with prefixes ("doi: 10…", doi.org links, trailing punctuation) now resolve; a DOI containing a comma no longer breaks the lookup of 49 others; expired cache entries are used when you're offline; the cache no longer grows without bound.
+
+**Fixes.**
+- Zotero's session restore no longer breaks on an open map tab (it used to stop restoring every later tab, PDF readers included); map tabs close cleanly when the plugin is disabled or updated.
+- Notes with line breaks, images or non-breaking spaces previewed as "Could not load this note"; the preview is now rebuilt from a strict allowlist (also safer).
+- A plain click no longer pins a paper (only dragging does, in the Network), switching views releases pins, and papers added while in the Timeline find their place in the Network.
+- Duplicate items of the same paper no longer count twice (which flooded Suggested with false "cited by 2" hits); hidden suggestions no longer weld unrelated papers into one island; links into other islands no longer drag papers across the map.
+- "Add to Zotero" files into the mapped collection's own library (it failed for group libraries) and reuses an item that already has the DOI instead of creating a duplicate; it no longer overwrites the card of a paper selected meanwhile.
+- Imported maps no longer link to unrelated local items (Zotero item IDs differ between machines), and keep the review flag.
+- Declining the size warning on Rebuild keeps the current map; closing a tab mid-build no longer leaves a hidden map redrawing in the background; background map tabs stop drawing and ignore Esc.
+- PNG export has the map's background (it was transparent); export errors are shown.
+- Mutual citations no longer repeat a paper in a chain; "Hide reviews" fills the Top suggestions with non-reviews and no longer flags "peer review" or "state-of-the-art" research papers; the open-access legend explains Diamond and Unknown; turning journal branding off works without a restart; trackpad zoom is smooth and a sideways swipe pans.
+
 ## 1.9.0
 
 A major release focused on discovering the right papers and on a calmer, clearer interface.

@@ -17,15 +17,90 @@
 this.Main = {
   _ns: this, // the CitationMap namespace
   _windowEntries: new Map(), // window -> [elements to remove]
+  _windowCleanups: new Map(), // window -> [functions undoing patches]
   _views: [], // open GraphView instances
+  // tabID -> { win, gen }: every tab this plugin opened, and a counter that
+  // bumps on each (re)build, so a build that finishes after its tab was
+  // closed or rebuilt again knows to throw its result away
+  _tabs: new Map(),
 
   async startup() {
     await this._ns.DataSource.initCache();
+    this._scrubSession();
   },
 
   shutdown() {
     for (const view of this._views) view.destroy();
     this._views = [];
+    // Close our tabs too: after a disable/update they would otherwise stay
+    // open as blank "Citation Map — …" tabs driven by unloaded code.
+    for (const [tabID, t] of this._tabs) {
+      try {
+        t.win.Zotero_Tabs.close(tabID);
+      } catch (e) {
+        /* tab or window already gone */
+      }
+    }
+    this._tabs.clear();
+  },
+
+  /**
+   * Map tabs can't be restored after a restart (their content is built live),
+   * and Zotero_Tabs.restoreState() THROWS on a tab type it has no hook for,
+   * which aborts the restore of every later tab (PDF readers included). Older
+   * versions of this plugin let map tabs into session.json; drop them.
+   */
+  _scrubSession() {
+    try {
+      const state = Zotero.Session && Zotero.Session.state;
+      for (const w of (state && state.windows) || []) {
+        if (Array.isArray(w.tabs)) {
+          w.tabs = w.tabs.filter((t) => !t || t.type !== "citation-map");
+        }
+      }
+    } catch (e) {
+      Zotero.debug("[Citation Map] session scrub failed: " + e);
+    }
+  },
+
+  /** Keep this window's map tabs out of the saved session (see above). */
+  _patchTabSession(win) {
+    const tabs = win.Zotero_Tabs;
+    if (!tabs || typeof tabs.getState !== "function") return null;
+    const original = tabs.getState;
+    const patched = function () {
+      return original.apply(this, arguments).filter((t) => t.type !== "citation-map");
+    };
+    tabs.getState = patched;
+    // Safety net for a session saved before this patch existed: the
+    // "citation" restore hook resolves to "nothing to restore".
+    const hooks = tabs.tabHooks && tabs.tabHooks.restoreState;
+    const hook = async () => ({ itemID: null });
+    if (hooks && !hooks.citation) hooks.citation = hook;
+    return () => {
+      if (tabs.getState === patched) tabs.getState = original;
+      if (hooks && hooks.citation === hook) delete hooks.citation;
+    };
+  },
+
+  /** Register a tab this plugin opened. */
+  _trackTab(win, tabID) {
+    this._tabs.set(tabID, { win, gen: 0 });
+  },
+
+  /** Start a new build in a tab; returns a check "is this build still current?". */
+  _beginBuild(tabID, container) {
+    const t = this._tabs.get(tabID);
+    const gen = t ? ++t.gen : 0;
+    return () => {
+      const cur = this._tabs.get(tabID);
+      return !!cur && cur.gen === gen && container.isConnected !== false;
+    };
+  },
+
+  _onTabClosed(tabID) {
+    this._tabs.delete(tabID);
+    this._destroyView(tabID);
   },
 
   // ------------------------------------------------------------- window UI
@@ -105,7 +180,12 @@ this.Main = {
       Zotero.debug("[Citation Map] Items toolbar not found — button skipped");
     }
 
-    // Collection context menu → Show Citation Map for This Collection
+    const cleanups = [];
+
+    // Collection context menu → Show Citation Map for This Collection. The
+    // label follows the selection (several collections on Zotero 10, a
+    // saved search, a library), and the item hides where a map makes no
+    // sense (trash, feeds).
     const collPopup = doc.getElementById("zotero-collectionmenu");
     if (collPopup) {
       const mi = doc.createXULElement("menuitem");
@@ -114,9 +194,25 @@ this.Main = {
       mi.addEventListener("command", () => this.open(win));
       collPopup.appendChild(mi);
       created.push(mi);
+      const onShowing = (ev) => {
+        if (ev.target !== collPopup) return;
+        try {
+          const { label, hidden } = this._contextLabel(win.ZoteroPane);
+          mi.setAttribute("label", label);
+          mi.hidden = hidden;
+        } catch (e) {
+          /* keep the default label */
+        }
+      };
+      collPopup.addEventListener("popupshowing", onShowing);
+      cleanups.push(() => collPopup.removeEventListener("popupshowing", onShowing));
     }
 
+    const unpatch = this._patchTabSession(win);
+    if (unpatch) cleanups.push(unpatch);
+
     this._windowEntries.set(win, created);
+    this._windowCleanups.set(win, cleanups);
   },
 
   removeFromWindow(win) {
@@ -124,6 +220,34 @@ this.Main = {
       if (el.parentNode) el.parentNode.removeChild(el);
     }
     this._windowEntries.delete(win);
+    for (const fn of this._windowCleanups.get(win) || []) {
+      try {
+        fn();
+      } catch (e) {
+        /* best-effort */
+      }
+    }
+    this._windowCleanups.delete(win);
+  },
+
+  /** Context-menu label for the current collections-pane selection. */
+  _contextLabel(pane) {
+    const cols = this._selectedCollections(pane);
+    if (cols.length > 1) {
+      return { label: `Show Citation Map for These ${cols.length} Collections`, hidden: false };
+    }
+    if (cols.length === 1) {
+      return { label: "Show Citation Map for This Collection", hidden: false };
+    }
+    const row = this._selectedTreeRows(pane)[0];
+    const is = (fn) => !!(row && typeof row[fn] === "function" && row[fn]());
+    if (is("isTrash") || is("isFeed") || is("isFeedsOrFeed")) {
+      return { label: "Show Citation Map", hidden: true };
+    }
+    if (is("isLibrary") || is("isGroup")) {
+      return { label: "Show Citation Map for This Library", hidden: false };
+    }
+    return { label: "Show Citation Map for These Items", hidden: false };
   },
 
   // =========================================================== subcollections
@@ -383,28 +507,147 @@ this.Main = {
     });
   },
 
+  // ------------------------------------------------------- pane selection
+  //
+  // Zotero 10 made the collections pane multi-select: the singular getters
+  // (getSelectedCollection, getSelectedLibraryID, getCollectionTreeRow) now
+  // THROW, and plural replacements exist. Zotero 7–9 only have the singular
+  // ones. These helpers prefer the plural API and fall back, so one build
+  // runs on both.
+
+  /** Selected collections (possibly several on Zotero 10+). */
+  _selectedCollections(pane) {
+    if (typeof pane.getSelectedCollections === "function") {
+      try {
+        return (pane.getSelectedCollections() || []).filter(Boolean);
+      } catch (e) {
+        /* fall back to the singular API below */
+      }
+    }
+    try {
+      const c = pane.getSelectedCollection();
+      return c ? [c] : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  /** The library of the current selection (first one, if several). */
+  _selectedLibraryID(pane) {
+    if (typeof pane.getSelectedLibraryIDs === "function") {
+      try {
+        const ids = pane.getSelectedLibraryIDs() || [];
+        if (ids.length) return ids[0];
+      } catch (e) {
+        /* fall back */
+      }
+    }
+    try {
+      const id = pane.getSelectedLibraryID();
+      if (id) return id;
+    } catch (e) {
+      /* fall back */
+    }
+    return Zotero.Libraries.userLibraryID;
+  },
+
+  /** Selected collection-tree rows (library, search, trash, unfiled, …). */
+  _selectedTreeRows(pane) {
+    if (typeof pane.getCollectionTreeRows === "function") {
+      try {
+        return (pane.getCollectionTreeRows() || []).filter(Boolean);
+      } catch (e) {
+        /* fall back */
+      }
+    }
+    try {
+      const row = pane.getCollectionTreeRow();
+      return row ? [row] : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  _libraryName(libraryID) {
+    try {
+      return Zotero.Libraries.getName(libraryID) || "My Library";
+    } catch (e) {
+      return "My Library";
+    }
+  },
+
   // -------------------------------------------------------------- pipeline
 
-  /** What to map: a multi-item selection, a collection, or the whole library. */
+  /**
+   * What to map: a multi-item selection, one or several collections, the
+   * items a special view shows (saved search, Unfiled, Duplicates, …), or
+   * the whole library.
+   */
   _resolveSource(win, preferSelection) {
     const pane = win.ZoteroPane;
     if (preferSelection) {
-      const selected = (pane.getSelectedItems() || []).filter((i) =>
-        i.isRegularItem()
-      );
+      // A selected note, attachment or annotation stands for its paper.
+      const seen = new Set();
+      const selected = [];
+      for (const sel of pane.getSelectedItems() || []) {
+        let it = sel;
+        try {
+          while (it && !it.isRegularItem() && it.parentItem) it = it.parentItem;
+        } catch (e) {
+          it = null;
+        }
+        if (it && it.isRegularItem() && !seen.has(it.id)) {
+          seen.add(it.id);
+          selected.push(it);
+        }
+      }
       if (selected.length >= 2) {
         return { kind: "items", items: selected, name: "Selected Items" };
       }
     }
-    const collection = pane.getSelectedCollection();
-    if (collection) {
+    const collections = this._selectedCollections(pane);
+    if (collections.length === 1) {
+      const collection = collections[0];
       return { kind: "collection", collection, name: collection.name };
     }
-    return {
-      kind: "library",
-      libraryID: pane.getSelectedLibraryID(),
-      name: "My Library",
-    };
+    if (collections.length > 1) {
+      const names = collections.map((c) => c.name);
+      return {
+        kind: "collections",
+        collections,
+        name:
+          names.length <= 3
+            ? names.join(" + ")
+            : `${names.slice(0, 2).join(" + ")} + ${names.length - 2} more`,
+      };
+    }
+
+    // Not a collection: a library root, or a special view. A special view
+    // maps exactly what the items list shows, mapping the whole library
+    // from "Unfiled Items" or a saved search would surprise anyone.
+    const row = this._selectedTreeRows(pane)[0];
+    const is = (fn) => !!(row && typeof row[fn] === "function" && row[fn]());
+    if (is("isTrash")) {
+      throw new Error("The trash can't be mapped. Select a collection or a library.");
+    }
+    if (is("isFeed") || is("isFeedsOrFeed")) {
+      throw new Error("Feeds can't be mapped. Select a collection or a library.");
+    }
+    const isLibraryRoot = is("isLibrary") || is("isGroup");
+    if (row && !isLibraryRoot && typeof pane.getSortedItems === "function") {
+      const items = (pane.getSortedItems() || []).filter(
+        (i) => i && typeof i.isRegularItem === "function" && i.isRegularItem()
+      );
+      let name = "Current view";
+      try {
+        name = (row.ref && row.ref.name) || row.getName() || name;
+      } catch (e) {
+        /* keep the generic name */
+      }
+      return { kind: "items", items, name };
+    }
+    const libraryID = this._selectedLibraryID(pane);
+    return { kind: "library", libraryID, name: this._libraryName(libraryID) };
   },
 
   /** Open the Citation Map tab and run the full build for the selection. */
@@ -440,8 +683,9 @@ this.Main = {
         // makes Zotero_Tabs.add() throw (TypeError on tab.data.icon).
         data: {},
         select: true,
-        onClose: () => this._destroyView(id),
+        onClose: () => this._onTabClosed(id),
       });
+      this._trackTab(win, id);
       Zotero.debug("[Citation Map] Tab opened: " + id);
       closePopup();
 
@@ -468,6 +712,18 @@ this.Main = {
    * collection is mapped for the first time), then build and render.
    */
   async _runPipeline(win, container, tabID, source, { promptIfNeeded }) {
+    // promptIfNeeded is false for Rebuild / scope changes: a map is already
+    // on screen then, and declining must keep it rather than close the tab.
+    const isRebuild = !promptIfNeeded;
+    // Returns "built" or "cancelled" (the caller may undo a scope change).
+    const decline = (message) => {
+      if (isRebuild && this._views.some((v) => v._tabID === tabID)) {
+        if (message) Zotero.alert(win, "Citation Map", message);
+      } else {
+        this._abort(win, tabID, message);
+      }
+      return "cancelled";
+    };
     let items;
     let subInfo = null;
 
@@ -515,6 +771,18 @@ this.Main = {
           firstTime: justPrompted,
         };
       }
+    } else if (source.kind === "collections") {
+      // Several collections selected (Zotero 10+): their union, each with
+      // its remembered subcollection scope (or the default, no prompt).
+      const all = [];
+      for (const c of source.collections) {
+        const sub = this._subTree(c);
+        const scope = sub.length
+          ? this._getScope(c.id) || this._defaultScope()
+          : { mode: "all", ids: [] };
+        all.push(...this._resolveCollections(c, sub, scope));
+      }
+      items = await this._itemsFromCollections(all);
     } else if (source.kind === "items") {
       items = source.items;
     } else {
@@ -527,8 +795,7 @@ this.Main = {
     );
 
     if (!items.length) {
-      this._abort(win, tabID, "The selected collection has no items to map.");
-      return;
+      return decline("The selected collection has no items to map.");
     }
     // Two warning tiers: a "this takes a while" confirm, and a strong
     // warning for very large maps (the layout is O(n²)-ish; thousands of
@@ -542,22 +809,17 @@ this.Main = {
           `unresponsive — mapping per (sub)collection is strongly ` +
           `recommended instead.\n\nContinue anyway?`
       );
-      if (!ok) {
-        this._abort(win, tabID);
-        return;
-      }
+      if (!ok) return decline();
     } else if (items.length > warnAt) {
       const ok = win.confirm(
         `Citation Map: this will map ${items.length} items, which can take a ` +
           `while on first run. Continue?`
       );
-      if (!ok) {
-        this._abort(win, tabID);
-        return;
-      }
+      if (!ok) return decline();
     }
 
     await this._buildAndRender(win, container, tabID, source, items, subInfo);
+    return "built";
   },
 
   /** Close the tab (and its view) and, optionally, explain why. */
@@ -634,11 +896,20 @@ this.Main = {
         label.textContent = msg;
         barInner.style.width = "0%";
       },
+      /** Extra content under the message (e.g. the API-key form). */
+      append: (el) => inner.appendChild(el),
     };
   },
 
   async _buildAndRender(win, container, tabID, source, items, subInfo) {
     const doc = win.document;
+    // A newer build (or closing the tab) supersedes this one: its result is
+    // then dropped instead of becoming a hidden view that redraws forever.
+    const current = this._beginBuild(tabID, container);
+    const rebuild = () =>
+      this._runPipeline(win, container, tabID, source, {
+        promptIfNeeded: false,
+      });
     // Replacing an existing map (rebuild / scope change): drop the old view.
     this._destroyView(tabID);
     container.textContent = "";
@@ -656,25 +927,28 @@ this.Main = {
           "Your connection seems slow — OpenAlex is answering, but it may " +
             "take a few minutes. Everything is cached for next time."
         );
-      } else if (DS.netState === "offline") {
-        prog.warn(
-          "OpenAlex can't be reached — you appear to be offline. Using " +
-            "locally cached data where possible."
-        );
+      } else if (DS.netMessage()) {
+        prog.warn(DS.netMessage());
       }
     };
     try {
       const graph = await this._ns.GraphBuilder.build(items, onProgress);
+      if (!current()) return; // tab closed or rebuilt meanwhile
 
-      // Fully offline and nothing cached: an all-grey map would only
-      // confuse — explain instead.
-      if (graph.stats.resolved === 0 && DS.netState === "offline") {
+      // No connection / refused and nothing cached: an all-grey map would
+      // only confuse — explain instead.
+      if (graph.stats.resolved === 0 && DS.netMessage()) {
         prog.fail(
-          "No internet connection — OpenAlex could not be reached and none " +
-            "of these papers are in the local cache yet. Reconnect and use " +
-            "Tools → Show Citation Map again (collections mapped while " +
-            "online keep working offline)."
+          DS.netState === "offline"
+            ? "No internet connection — OpenAlex could not be reached and " +
+                "none of these papers are in the local cache yet. Reconnect " +
+                "and use Tools → Show Citation Map again (collections mapped " +
+                "while online keep working offline)."
+            : DS.netMessage()
         );
+        if (DS.netState === "limited") {
+          prog.append(this._ns.GraphView.apiKeyForm(doc, rebuild));
+        }
         return;
       }
 
@@ -684,6 +958,8 @@ this.Main = {
       const snapKey =
         source.kind === "collection"
           ? "c" + source.collection.id
+          : source.kind === "collections"
+          ? "m" + source.collections.map((c) => c.id).sort((a, b) => a - b).join(",")
           : source.kind === "library"
           ? "L" + source.libraryID
           : null;
@@ -700,15 +976,21 @@ this.Main = {
       const ctx = {
         collectionName: source.name,
         collectionID: source.kind === "collection" ? source.collection.id : null,
+        // the library new papers go into ("Add to Zotero")
+        libraryID:
+          source.kind === "collection"
+            ? source.collection.libraryID
+            : source.kind === "collections"
+            ? source.collections[0].libraryID
+            : source.kind === "library"
+            ? source.libraryID
+            : null,
         subInfo,
         changed,
-        netState: DS.netState, // view shows a notice for "slow"/"offline"
+        netState: DS.netState, // view shows a notice when it isn't "ok"
+        netMessage: DS.netMessage(),
         importJSON: () => this.importJSON(win),
-        rebuild: async () => {
-          await this._runPipeline(win, container, tabID, source, {
-            promptIfNeeded: false,
-          });
-        },
+        rebuild,
         changeScope:
           source.kind === "collection"
             ? async () => this._changeScope(win, container, tabID, source)
@@ -724,12 +1006,14 @@ this.Main = {
       prog.remove();
     } catch (e) {
       Zotero.debug("[Citation Map] Build failed: " + e + "\n" + (e && e.stack));
+      if (!current()) return;
       prog.fail(
         DS.netState === "offline"
           ? "No internet connection — OpenAlex could not be reached. " +
               "Reconnect and try again; collections mapped while online " +
               "keep working offline."
-          : "Could not build the map. See Help → Debug Output for details."
+          : DS.netMessage() ||
+              "Could not build the map. See Help → Debug Output for details."
       );
     }
   },
@@ -752,10 +1036,15 @@ this.Main = {
       { initial: false }
     );
     if (!chosen) return; // cancelled — leave the map as-is
+    const previous = this._getScope(source.collection.id);
     this._setScope(source.collection.id, chosen);
-    await this._runPipeline(win, container, tabID, source, {
+    const status = await this._runPipeline(win, container, tabID, source, {
       promptIfNeeded: false,
     });
+    // declined the size warning: the old map stays, so does the old scope
+    if (status === "cancelled" && previous) {
+      this._setScope(source.collection.id, previous);
+    }
   },
 
   // ---------------------------------------------------------------- import
@@ -804,8 +1093,9 @@ this.Main = {
         title: "Citation Map — " + baseName,
         data: {},
         select: true,
-        onClose: () => this._destroyView(id),
+        onClose: () => this._onTabClosed(id),
       });
+      this._trackTab(win, id);
       container.textContent = "";
 
       // Offer to reconstruct the map's papers into a new Zotero collection,
@@ -821,6 +1111,7 @@ this.Main = {
         }
       }
 
+      if (!this._tabs.has(id)) return; // tab closed during the import
       this._renderImported(win, container, id, graph, displayName, collectionID);
     } catch (e) {
       Zotero.logError(e);
@@ -914,7 +1205,7 @@ this.Main = {
 
       let paneColl = null;
       try {
-        paneColl = win.ZoteroPane.getSelectedCollection();
+        paneColl = this._selectedCollections(win.ZoteroPane)[0] || null;
       } catch (e) {
         /* no pane */
       }
@@ -1131,16 +1422,33 @@ this.Main = {
     return items && items.length ? items[0] : null;
   },
 
+  /**
+   * The library's regular item with exactly this DOI, or null. The search is
+   * a substring match ("10.1/x1" also finds "10.1/x12"), so every hit is
+   * checked for an exact, normalized DOI match.
+   */
   async _findByDOI(libraryID, doi) {
+    const DS = this._ns.DataSource;
+    const want = DS.normalizeDOI(doi);
+    if (!want) return null;
     try {
       const s = new Zotero.Search();
       s.libraryID = libraryID;
-      s.addCondition("DOI", "contains", doi);
-      const ids = await s.search();
-      return ids && ids.length ? Zotero.Items.get(ids[0]) : null;
+      s.addCondition("DOI", "contains", want);
+      const ids = (await s.search()) || [];
+      for (const item of Zotero.Items.get(ids)) {
+        if (
+          item &&
+          item.isRegularItem() &&
+          DS.normalizeDOI(item.getField("DOI")) === want
+        ) {
+          return item;
+        }
+      }
     } catch (e) {
-      return null;
+      /* search unavailable — treat as not found */
     }
+    return null;
   },
 
   /**
@@ -1184,9 +1492,18 @@ this.Main = {
         oaStatus: n.oaStatus != null ? String(n.oaStatus) : null,
         via: n.via != null ? String(n.via) : null,
         citesCount: Number(n.citesCount) || 0,
+        // older exports lack the flag: re-detect it from the title/venue
+        isReview:
+          typeof n.isReview === "boolean"
+            ? n.isReview
+            : this._ns.GraphBuilder.isReviewRecord({
+                title: n.title ? String(n.title) : "",
+                venue: n.venue != null ? String(n.venue) : null,
+              }),
       });
     }
     if (!nodes.length) throw new Error("The file contains no usable nodes.");
+    this._relinkImported(nodes);
 
     const edges = (Array.isArray(data.edges) ? data.edges : [])
       .filter((e) => e && keys.has(String(e.source)) && keys.has(String(e.target)))
@@ -1217,17 +1534,37 @@ this.Main = {
     return { nodes, edges, chains, coupling, stats };
   },
 
-  async _pickOpenPath(win) {
-    let FilePicker;
-    try {
-      ({ FilePicker } = ChromeUtils.importESModule(
-        "chrome://zotero/content/modules/filePicker.mjs"
-      ));
-    } catch (e) {
-      ({ FilePicker } = ChromeUtils.import(
-        "chrome://zotero/content/modules/filePicker.jsm"
-      ));
+  /**
+   * Zotero item IDs in an export are local database row numbers: on another
+   * machine (or someone else's library) they point at unrelated items, whose
+   * notes and tags the map would then show. Keep an ID only if that item
+   * here is the same paper (same DOI, or same title when there is no DOI).
+   */
+  _relinkImported(nodes) {
+    const DS = this._ns.DataSource;
+    const norm = (t) => String(t || "").toLowerCase().replace(/\W+/g, " ").trim();
+    for (const n of nodes) {
+      if (n.zoteroItemID == null) continue;
+      let keep = false;
+      try {
+        const item = Zotero.Items.get(n.zoteroItemID);
+        if (item && !item.deleted && item.isRegularItem()) {
+          keep = n.doi
+            ? DS.normalizeDOI(item.getField("DOI")) === DS.normalizeDOI(n.doi)
+            : norm(item.getField("title")) === norm(n.title);
+        }
+      } catch (e) {
+        keep = false;
+      }
+      if (!keep) n.zoteroItemID = null;
     }
+  },
+
+  async _pickOpenPath(win) {
+    // filePicker.mjs is the Zotero 7+ module (ChromeUtils.import is gone)
+    const { FilePicker } = ChromeUtils.importESModule(
+      "chrome://zotero/content/modules/filePicker.mjs"
+    );
     const fp = new FilePicker();
     fp.init(win, "Import Citation Map", fp.modeOpen);
     fp.appendFilter("Citation Map JSON", "*.json");

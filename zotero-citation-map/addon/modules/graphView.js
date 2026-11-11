@@ -42,7 +42,20 @@ this.GraphView = class {
     this.graph = graph;
     this.ctx = ctx;
 
-    this.mode = "force"; // "force" | "timeline"
+    // "force" | "timeline". The network layout always settles first (so
+    // switching to it later glides to stable islands); the map then opens in
+    // the remembered layout, the timeline by default.
+    this.mode = "force";
+    this._initialMode =
+      Zotero.Prefs.get("extensions.citation-map.layoutMode", true) === "force"
+        ? "force"
+        : "timeline";
+    // what a paper's HEIGHT means in the timeline: "global" = citations
+    // worldwide, "local" = how many papers on this map cite it
+    this.yMetric =
+      Zotero.Prefs.get("extensions.citation-map.timelineMetric", true) === "local"
+        ? "local"
+        : "global";
     // how suggested papers appear on the map: "off" | "top" | "all"
     this.suggestDisplay =
       Zotero.Prefs.get("extensions.citation-map.suggestDisplay", true) || "top";
@@ -101,6 +114,10 @@ this.GraphView = class {
     // Settle the layout off-screen so the map appears already calm and
     // then stays still, no multi-second live "wobble" every time.
     this._preSettle();
+    this._compactIslands();
+    if (this._initialMode === "timeline") {
+      this._setMode("timeline", { instant: true, persist: false });
+    }
     this._fitView();
     this._dirty = true;
     this._animate();
@@ -121,6 +138,18 @@ this.GraphView = class {
           "collection will be nearly instant.",
         "warn"
       );
+    } else if (this.ctx && this.ctx.netMessage) {
+      // refused (daily budget / API key) or an OpenAlex server error
+      const n = this._showNotice(
+        this.ctx.netMessage + " Some papers or suggestions may be missing.",
+        "warn"
+      );
+      if (n && this.ctx.netState === "limited") {
+        n.insertBefore(
+          this.constructor.apiKeyForm(this.doc, () => this.ctx.rebuild()),
+          n.lastChild
+        );
+      }
     }
 
     // Whether the toolbar scope control should pulse once the walkthrough
@@ -271,18 +300,46 @@ this.GraphView = class {
       }
       return x;
     };
+    // Islands come from links between YOUR papers only: a suggestion (most
+    // are hidden) cited by two of your papers must not weld them into one
+    // island with no visible line between them.
+    const isSugg = (key) => {
+      const n = this.nodeByKey.get(key);
+      return !!n && n.kind === "discovered";
+    };
     for (const n of nodes) parent.set(n.key, n.key);
     for (const e of this.graph.edges) {
       if (!parent.has(e.source) || !parent.has(e.target)) continue;
+      if (isSugg(e.source) || isSugg(e.target)) continue;
       const ra = find(e.source);
       const rb = find(e.target);
       if (ra !== rb) parent.set(ra, rb);
     }
     const groups = new Map();
     for (const n of nodes) {
+      if (n.kind === "discovered") continue;
       const r = find(n.key);
       if (!groups.has(r)) groups.set(r, []);
       groups.get(r).push(n);
+    }
+    // ...and each suggestion rests on the biggest island among its citers.
+    const citersOf = new Map();
+    for (const e of this.graph.edges) {
+      if (!isSugg(e.target) || isSugg(e.source)) continue;
+      if (!citersOf.has(e.target)) citersOf.set(e.target, []);
+      citersOf.get(e.target).push(e.source);
+    }
+    for (const n of nodes) {
+      if (n.kind !== "discovered") continue;
+      let best = null;
+      for (const c of citersOf.get(n.key) || []) {
+        const r = find(c);
+        if (groups.has(r) && (!best || groups.get(r).length > groups.get(best).length)) {
+          best = r;
+        }
+      }
+      if (best) groups.get(best).push(n);
+      else groups.set(n.key, [n]);
     }
 
     const multi = [];
@@ -325,35 +382,9 @@ this.GraphView = class {
     }
 
     // --- pack island anchors on a spiral, largest at the centre
-    const gap = 18 * ls; // breathing room between islands (tightened so many
-    // small islands don't spread the map into a field of tiny specks)
-    const placed = [];
-    for (const e of entries) {
-      if (!placed.length) {
-        e.cx = 0;
-        e.cy = 0;
-        placed.push(e);
-        continue;
-      }
-      let angle = 0;
-      let radius = placed[0].radius + e.radius + gap;
-      let step = 0;
-      for (;;) {
-        const x = Math.cos(angle) * radius;
-        const y = Math.sin(angle) * radius;
-        const ok = placed.every(
-          (p) => Math.hypot(p.cx - x, p.cy - y) >= p.radius + e.radius + gap
-        );
-        if (ok || step > 800) {
-          e.cx = x;
-          e.cy = y;
-          placed.push(e);
-          break;
-        }
-        angle += 0.6;
-        if (++step % 11 === 0) radius += gap * 0.8;
-      }
-    }
+    this._packIslands(entries);
+    this._islands = entries;
+    this._singlesEntry = singlesEntry;
 
     // --- assign anchors + deterministic start positions
     this._compGroups = []; // node arrays that repel internally
@@ -408,6 +439,76 @@ this.GraphView = class {
   }
 
   /**
+   * Place island anchors (e.cx/e.cy) on a spiral around the first (largest)
+   * one, so no two islands' circles (e.radius) come closer than a small gap.
+   */
+  _packIslands(entries) {
+    const gap = 18 * this.layoutScale; // breathing room between islands
+    const placed = [];
+    for (const e of entries) {
+      if (!placed.length) {
+        e.cx = 0;
+        e.cy = 0;
+        placed.push(e);
+        continue;
+      }
+      let angle = 0;
+      let radius = placed[0].radius + e.radius + gap;
+      let step = 0;
+      for (;;) {
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        const ok = placed.every(
+          (p) => Math.hypot(p.cx - x, p.cy - y) >= p.radius + e.radius + gap
+        );
+        if (ok || step > 800) {
+          e.cx = x;
+          e.cy = y;
+          placed.push(e);
+          break;
+        }
+        angle += 0.6;
+        if (++step % 11 === 0) radius += gap * 0.8;
+      }
+    }
+  }
+
+  /**
+   * After the network has settled, re-pack the islands by the room they
+   * ACTUALLY take (the pre-layout radius is a generous guess), so the map
+   * doesn't open as a few specks separated by empty moats. Each island
+   * moves rigidly, nodes and anchor together, so its shape is untouched.
+   */
+  _compactIslands() {
+    const entries = this._islands;
+    if (!entries || entries.length < 2) return;
+    for (const e of entries) {
+      e.oldX = e.cx;
+      e.oldY = e.cy;
+      if (e.grid) continue; // the unlinked-papers grid is already exact
+      let r = 0;
+      for (const n of e.nodes) {
+        r = Math.max(r, Math.hypot(n.x - e.cx, n.y - e.cy) + n.r + 18);
+      }
+      e.radius = Math.max(40, r);
+    }
+    this._packIslands(entries);
+    for (const e of entries) {
+      const dx = e.cx - e.oldX;
+      const dy = e.cy - e.oldY;
+      for (const n of e.nodes) {
+        n.x += dx;
+        n.y += dy;
+        n.anchorX += dx;
+        n.anchorY += dy;
+      }
+    }
+    this._arena =
+      entries.reduce((m, e) => Math.max(m, Math.hypot(e.cx, e.cy) + e.radius), 0) +
+      400 * this.layoutScale;
+  }
+
+  /**
    * Auto-label a citation cluster: the OpenAlex topic most of its papers
    * share, falling back to the strongest locally-extracted title phrase.
    */
@@ -448,6 +549,8 @@ this.GraphView = class {
     const sugg = this.graph.nodes.filter((n) => n.kind === "discovered");
     const eligible = sugg
       .filter((n) => n.inLibraryCitations >= this.suggestMinCiters)
+      // with reviews hidden, "Top N" fills its slots with non-reviews
+      .filter((n) => !(this.hideReviews && n.isReview))
       .sort(
         (a, b) =>
           b.inLibraryCitations - a.inLibraryCitations ||
@@ -468,6 +571,9 @@ this.GraphView = class {
     if (this.mode === "timeline") {
       this._computeTimelineLayout();
       this.alpha = 1;
+      // newly shown papers never took part in the network layout: let it
+      // settle them once we're back there
+      this._unsettled = true;
     } else if (reheat) {
       this.alpha = Math.max(this.alpha || 0, 0.3);
     }
@@ -484,6 +590,9 @@ this.GraphView = class {
   _active() {
     if (!this._activeNodes) {
       this._activeNodes = this.graph.nodes.filter((n) => !this._hiddenFromMap(n));
+      // label priority counts only papers actually on the map, so hidden
+      // ones don't use up the label budget
+      this._activeNodes.forEach((n, i) => (n._rank = i));
       this._activeEdges = this.graph.edges.filter((e) => {
         const s = this.nodeByKey.get(e.source);
         const t = this.nodeByKey.get(e.target);
@@ -502,6 +611,7 @@ this.GraphView = class {
       /* best-effort */
     }
     this._syncReviewBtn();
+    this._applySuggestionVisibility(false);
     this._applyReviewVisibility();
   }
 
@@ -732,7 +842,7 @@ this.GraphView = class {
     const btn = this._el("button", "zcm-btn", "Display");
     btn.setAttribute(
       "title",
-      "What the colors encode, and the coupling-links overlay"
+      "Colors, timeline height, coupling links, spacing and line thickness"
     );
     this._displayBtn = btn;
     this._popover(btn, (panel) => {
@@ -760,7 +870,7 @@ this.GraphView = class {
         [
           "oa",
           "By access",
-          "Open-access status: gold, green, hybrid, bronze, closed",
+          "Open-access status: gold, green, hybrid, bronze, diamond, closed",
         ],
       ];
       const wrap = this._el("div", "zcm-pop-modelist");
@@ -847,8 +957,159 @@ this.GraphView = class {
       }
       row.appendChild(strength);
       panel.appendChild(row);
+
+      panel.appendChild(this._el("div", "zcm-pop-head", "Timeline height"));
+      panel.appendChild(
+        this._el(
+          "div",
+          "zcm-pop-sub",
+          "In the Timeline, the higher a paper sits, the more it is cited."
+        )
+      );
+      const metric = this._el("div", "zcm-chips");
+      for (const [val, label, tip] of [
+        ["global", "Citations worldwide", "All citations OpenAlex knows of (log scale)"],
+        ["local", "Cited on this map", "How many papers on this map cite it"],
+      ]) {
+        const chip = this._el("button", "zcm-chip", label);
+        chip.setAttribute("title", tip);
+        if (val === this.yMetric) chip.classList.add("zcm-on");
+        chip.addEventListener("click", () => {
+          this._setYMetric(val);
+          for (const c of metric.children) c.classList.toggle("zcm-on", c === chip);
+        });
+        metric.appendChild(chip);
+      }
+      panel.appendChild(metric);
+
+      panel.appendChild(this._el("div", "zcm-pop-head", "Size"));
+      panel.appendChild(
+        this._buildSlider(
+          "Spacing",
+          "Distance between papers (double-click to reset)",
+          75,
+          250,
+          this.spacingPct,
+          (v) => this._setSpacing(v)
+        )
+      );
+      panel.appendChild(
+        this._buildSlider(
+          "Lines",
+          "Thickness of the citation lines (double-click to reset)",
+          40,
+          300,
+          this.edgeWidthPct,
+          (v) => this._setEdgeWidth(v)
+        )
+      );
     });
     return btn;
+  }
+
+  /** Toolbar "More ▾": export, import and the OpenAlex API key. */
+  _buildMoreControl() {
+    const btn = this._el("button", "zcm-btn", "More ▾");
+    btn.setAttribute("title", "Export or import the map, OpenAlex API key");
+    this._moreBtn = btn;
+    this._popover(btn, (panel) => {
+      const items = [
+        ["Export PNG image", "Save the current view as an image", () =>
+          this._safeExport(() => this._exportPNG())],
+        ["Export JSON data", "Save nodes and edges as JSON", () =>
+          this._safeExport(() => this._exportJSON())],
+      ];
+      if (this.ctx && this.ctx.importJSON) {
+        items.push(["Import JSON map…", "Open a previously exported map in a new tab", () =>
+          this.ctx.importJSON()]);
+      }
+      items.push(["OpenAlex API key…", "Optional free key for a bigger daily OpenAlex budget", () => {
+        const n = this._showNotice(
+          "OpenAlex works without a key on a small daily budget per network. " +
+            "A free key raises it about tenfold; it is stored in Zotero and " +
+            "sent only to api.openalex.org.",
+          "advice"
+        );
+        if (n) n.insertBefore(this.constructor.apiKeyForm(this.doc, null), n.lastChild);
+      }]);
+      for (const [label, tip, fn] of items) {
+        const b = this._el("button", "zcm-btn zcm-pop-item", label);
+        b.setAttribute("title", tip);
+        Object.assign(b.style, { display: "block", width: "100%", textAlign: "left", margin: "2px 0" });
+        b.addEventListener("click", () => {
+          this._closePopover();
+          fn();
+        });
+        panel.appendChild(b);
+      }
+    });
+    return btn;
+  }
+
+  /** What a paper's height means in the timeline ("global" | "local"). */
+  _setYMetric(val) {
+    if (val === this.yMetric) return;
+    this.yMetric = val;
+    try {
+      Zotero.Prefs.set("extensions.citation-map.timelineMetric", val, true);
+    } catch (e) {
+      /* best-effort */
+    }
+    if (this.mode === "timeline") {
+      this._computeTimelineLayout();
+      this.alpha = 1;
+      this.win.setTimeout(() => {
+        if (!this._destroyed) this._fitView(true);
+      }, 600);
+    }
+    this._dirty = true;
+  }
+
+  /**
+   * A small inline form to save (or clear) the optional OpenAlex API key,
+   * styled inline so it renders even without the stylesheet. `onSaved` runs
+   * after a change (e.g. to rebuild the map).
+   */
+  static apiKeyForm(doc, onSaved) {
+    const row = doc.createElement("div");
+    row.style.cssText =
+      "display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px";
+    const input = doc.createElement("input");
+    input.type = "text";
+    input.placeholder = "Paste your OpenAlex API key";
+    input.style.cssText = "flex:1 1 220px;min-width:0;padding:4px 6px;font:inherit";
+    let current = "";
+    try {
+      current = String(Zotero.Prefs.get("extensions.citation-map.apiKey", true) || "");
+    } catch (e) {
+      /* no prefs */
+    }
+    input.value = current;
+    const save = doc.createElement("button");
+    save.textContent = "Save key";
+    save.className = "zcm-btn zcm-btn-primary";
+    const status = doc.createElement("span");
+    status.style.cssText = "font-size:11px;opacity:.8";
+    save.addEventListener("click", () => {
+      try {
+        Zotero.Prefs.set("extensions.citation-map.apiKey", input.value.trim(), true);
+        status.textContent = input.value.trim() ? "Saved." : "Key cleared.";
+        if (onSaved) onSaved();
+      } catch (e) {
+        status.textContent = "Couldn't save the key.";
+      }
+    });
+    const get = doc.createElement("button");
+    get.textContent = "Get a free key";
+    get.className = "zcm-btn";
+    get.addEventListener("click", () =>
+      Zotero.launchURL("https://openalex.org/settings/api")
+    );
+    row.appendChild(input);
+    row.appendChild(save);
+    row.appendChild(get);
+    row.appendChild(status);
+    return row;
   }
 
   /** Toolbar "Filter" button: year range + Zotero tag (dims non-matching). */
@@ -1005,6 +1266,11 @@ this.GraphView = class {
 
   // ------------------------------------------------------------ color modes
 
+  /** Smallest zoom, shared by fit-to-view, the wheel and the − button. */
+  static get MIN_ZOOM() {
+    return 0.1;
+  }
+
   /** Distinguishable island colors for the "cluster" mode. */
   static get CLUSTER_PALETTE() {
     return [
@@ -1023,6 +1289,16 @@ this.GraphView = class {
     ];
   }
 
+  /**
+   * Link direction around a focused paper: blue = the papers it cites (its
+   * references), pink = the papers citing it. A blue/pink pair stays
+   * distinguishable for the common forms of colour blindness and differs
+   * from the node fills (ivory, amber, slate) and the teal chain thread.
+   */
+  static get FOCUS_COLORS() {
+    return { refs: "#58a6ff", citers: "#ff7eb6" };
+  }
+
   static get OA_COLORS() {
     return {
       diamond: "#7adfe0",
@@ -1032,6 +1308,7 @@ this.GraphView = class {
       bronze: "#cf9a6b",
       open: "#6fd9a6",
       closed: "#66708c",
+      unknown: "#3a4157", // no OpenAlex data (not "closed")
     };
   }
 
@@ -1056,7 +1333,7 @@ this.GraphView = class {
       }
       case "oa": {
         const map = this.constructor.OA_COLORS;
-        return (n.oaStatus && map[n.oaStatus]) || colors.unresolved;
+        return (n.oaStatus && map[n.oaStatus]) || map.unknown;
       }
       default:
         return colors[n.kind] || colors.library;
@@ -1072,16 +1349,23 @@ this.GraphView = class {
     const legend = this.legend;
     if (!legend) return;
     legend.textContent = "";
-    // `color` sets an inline swatch; `cls` uses a themed swatch class instead.
-    const item = (color, label, cls, tip) => {
+    // `color` sets an inline swatch; `cls` uses a themed swatch class instead;
+    // `ring` draws an open ring in that color (suggestions, as on the map).
+    const item = (color, label, cls, tip, ring) => {
       const li = this._el("span", "zcm-legend-item");
       if (tip) li.setAttribute("title", tip);
       const dot = this._el("span", "zcm-dot" + (cls ? " " + cls : ""));
       if (color) dot.style.background = color;
+      if (ring) {
+        dot.style.background = "transparent";
+        dot.style.border = "2px solid " + ring;
+        dot.style.boxSizing = "border-box";
+      }
       li.appendChild(dot);
       li.appendChild(this._el("span", null, label));
       legend.appendChild(li);
     };
+    const amber = this._css("--zcm-amber") || "#f0a63f";
     const violet = this._css("--zcm-violet") || "#8b7ff0";
     const kindItems = () => {
       item(
@@ -1093,17 +1377,19 @@ this.GraphView = class {
       item(
         null,
         "Suggested",
-        "zcm-dot-discovered",
+        null,
         "A paper NOT in your library that several of your papers cite " +
-          "(amber halo). Worth a look, see the Suggested tab."
+          "(an open amber ring). Worth a look, see the Suggested tab.",
+        amber
       );
-      // Discover-found papers are drawn with a violet halo (see _draw).
+      // Discover-found papers are drawn as violet rings (see _draw).
       item(
-        violet,
+        null,
         "Found by search",
         null,
         "A paper the Discover tab's live web search placed on the map " +
-          "(violet halo). Use “Remove from map” to take it off again."
+          "(an open violet ring). Use “Remove from map” to take it off again.",
+        violet
       );
       item(
         null,
@@ -1153,7 +1439,9 @@ this.GraphView = class {
         null,
         "Bronze, free to read on the publisher's site, but with no open license."
       );
+      item(oa.diamond, "Diamond", null, "Diamond OA, free to read and to publish (no author fees).");
       item(oa.closed, "Closed", null, "Closed, paywalled; no free version found.");
+      item(oa.unknown, "Unknown", null, "No open-access data, usually a paper without citation data.");
     } else if (this.colorMode === "publisher") {
       legend.setAttribute(
         "title",
@@ -1474,12 +1762,23 @@ this.GraphView = class {
 
     // layout toggle
     const toggle = this._el("div", "zcm-toggle");
-    this.btnForce = this._el("button", "zcm-toggle-btn zcm-on", "Network");
     this.btnTime = this._el("button", "zcm-toggle-btn", "Timeline");
-    this.btnForce.addEventListener("click", () => this._setMode("force"));
+    this.btnTime.setAttribute(
+      "title",
+      "Left → right = publication year · higher = more cited. " +
+        "Read when and how influential a paper is at a glance."
+    );
+    this.btnForce = this._el("button", "zcm-toggle-btn zcm-on", "Network");
+    this.btnForce.setAttribute(
+      "title",
+      "Papers that cite each other cluster into islands, labelled by topic. " +
+        "Read which papers belong together."
+    );
     this.btnTime.addEventListener("click", () => this._setMode("timeline"));
-    toggle.appendChild(this.btnForce);
+    this.btnForce.addEventListener("click", () => this._setMode("force"));
     toggle.appendChild(this.btnTime);
+    toggle.appendChild(this.btnForce);
+    this._layoutToggle = toggle; // coachmark anchor
     bar.appendChild(toggle);
 
     // Prominent "hide review articles" toggle: affects the map AND every
@@ -1494,30 +1793,8 @@ this.GraphView = class {
     // (The suggested-papers Off/Top/All control now lives in the Suggested
     // sidebar tab, next to the ×N strength filter, one place, not two.)
 
-    // scale sliders: distance between papers, thickness of citation lines
-    bar.appendChild(
-      this._buildSlider(
-        "Spacing",
-        "Distance between papers (double-click to reset)",
-        75,
-        250,
-        this.spacingPct,
-        (v) => this._setSpacing(v)
-      )
-    );
-    bar.appendChild(
-      this._buildSlider(
-        "Lines",
-        "Thickness of the citation lines (double-click to reset)",
-        40,
-        300,
-        this.edgeWidthPct,
-        (v) => this._setEdgeWidth(v)
-      )
-    );
-
-    // Display popover (what the colors mean, coupling links) and
-    // Filter popover (year range, Zotero tag)
+    // Display popover (colors, timeline height, coupling links, spacing and
+    // line sliders) and Filter popover (year range, Zotero tag)
     bar.appendChild(this._buildDisplayControl());
     bar.appendChild(this._buildFilterControl());
 
@@ -1534,28 +1811,11 @@ this.GraphView = class {
     this._renderLegend();
     bar.appendChild(this.legend);
 
-    const barButtons = [
-      ["Export PNG", () => this._exportPNG(), "Save the map as an image"],
-      ["Export JSON", () => this._exportJSON(), "Save nodes and edges as JSON"],
-    ];
-    if (this.ctx && this.ctx.importJSON) {
-      barButtons.push([
-        "Import JSON",
-        () => this.ctx.importJSON(),
-        "Open a previously exported map (JSON) in a new tab",
-      ]);
-    }
-    barButtons.push([
-      "Rebuild",
-      () => this.ctx.rebuild(),
-      "Re-fetch citation data and redraw",
-    ]);
-    for (const [label, fn, titleTip] of barButtons) {
-      const b = this._el("button", "zcm-btn", label);
-      b.setAttribute("title", titleTip);
-      b.addEventListener("click", fn);
-      bar.appendChild(b);
-    }
+    bar.appendChild(this._buildMoreControl());
+    const rebuildBtn = this._el("button", "zcm-btn", "Rebuild");
+    rebuildBtn.setAttribute("title", "Re-fetch citation data and redraw");
+    rebuildBtn.addEventListener("click", () => this.ctx.rebuild());
+    bar.appendChild(rebuildBtn);
     root.appendChild(bar);
 
     // ---- main area
@@ -2182,11 +2442,16 @@ this.GraphView = class {
             },
           }
         );
-        if (!entries.length && DS.netState === "offline") {
+        if (!entries.length && DS.netMessage()) {
           status.classList.add("zcm-discover-err");
           status.textContent =
-            "No internet connection, OpenAlex could not be reached. " +
-            "Reconnect and try the search again.";
+            DS.netState === "offline"
+              ? "No internet connection, OpenAlex could not be reached. " +
+                "Reconnect and try the search again."
+              : DS.netMessage();
+          if (DS.netState === "limited") {
+            status.appendChild(this.constructor.apiKeyForm(this.doc, null));
+          }
         } else {
           const span = fromYear ? ` published since ${fromYear}` : "";
           status.textContent = entries.length
@@ -2205,7 +2470,8 @@ this.GraphView = class {
           DS.netState === "offline"
             ? "No internet connection, OpenAlex could not be reached. " +
               "Reconnect and try again."
-            : "Search failed. See Help → Debug Output for details.";
+            : DS.netMessage() ||
+              "Search failed. See Help → Debug Output for details.";
       }
       runBtn.disabled = false;
     });
@@ -2417,7 +2683,7 @@ this.GraphView = class {
             );
             showBtn.addEventListener("click", async () => {
               try {
-                const pane = Zotero.getActiveZoteroPane();
+                const pane = this.win.ZoteroPane || Zotero.getActiveZoteroPane();
                 this.win.Zotero_Tabs.select("zotero-pane");
                 await pane.selectItem(item.id);
               } catch (err) {
@@ -2500,6 +2766,9 @@ this.GraphView = class {
     if (this.mode === "timeline") this._computeTimelineLayout();
     this.alpha = Math.max(this.alpha || 0, 0.2);
     this._refreshClearInjected();
+    // keep the Discover rows' "Show/Remove on map" buttons truthful, however
+    // the paper was removed (row, details card, "Clear")
+    if (this._discoverResync) this._discoverResync();
     this._dirty = true;
   }
 
@@ -2574,6 +2843,18 @@ this.GraphView = class {
       }
       node.x = cx + 30;
       node.y = cy - 30;
+      if (this.mode === "timeline" && citerNodes.length) {
+        // its network home: beside its citers' remembered network spots
+        let nx = 0;
+        let ny = 0;
+        for (const c of citerNodes) {
+          nx += c._netX != null ? c._netX : c.anchorX;
+          ny += c._netY != null ? c._netY : c.anchorY;
+        }
+        node._netX = nx / citerNodes.length + 30;
+        node._netY = ny / citerNodes.length - 30;
+        this._unsettled = true;
+      }
       node.anchorX = citerNodes.length ? citerNodes[0].anchorX : cx;
       node.anchorY = citerNodes.length ? citerNodes[0].anchorY : cy;
       node._cluster = citerNodes.length ? citerNodes[0]._cluster : -1;
@@ -2603,15 +2884,35 @@ this.GraphView = class {
     this._dirty = true;
   }
 
-  /** Import a work into the library (and collection) by DOI. */
+  /**
+   * Add a work to Zotero by DOI: into the mapped collection's own library (a
+   * group collection can't hold an item created in My Library), reusing an
+   * item that already has this DOI there instead of creating a duplicate.
+   */
   async _importByDOI(doi, collectionID) {
+    let libraryID = (this.ctx && this.ctx.libraryID) || Zotero.Libraries.userLibraryID;
+    const coll = collectionID ? Zotero.Collections.get(collectionID) : null;
+    if (coll) libraryID = coll.libraryID;
+    const lib = Zotero.Libraries.get(libraryID);
+    if (lib && lib.editable === false) {
+      throw new Error("The library of this map is read-only");
+    }
+    const Main = ZCM_VIEW_NS.Main;
+    const existing = Main ? await Main._findByDOI(libraryID, doi) : null;
+    if (existing) {
+      if (collectionID && !existing.getCollections().includes(collectionID)) {
+        existing.addToCollection(collectionID);
+        await existing.saveTx();
+      }
+      return existing;
+    }
     const translate = new Zotero.Translate.Search();
     translate.setIdentifier({ DOI: doi });
     const translators = await translate.getTranslators();
     if (!translators.length) throw new Error("No translator found for DOI");
     translate.setTranslator(translators);
     const items = await translate.translate({
-      libraryID: Zotero.Libraries.userLibraryID,
+      libraryID,
       collections: collectionID ? [collectionID] : false,
     });
     if (!items || !items.length) throw new Error("Nothing imported");
@@ -2702,7 +3003,7 @@ this.GraphView = class {
           let revealed = false;
           for (const key of chain) {
             const n = this.nodeByKey.get(key);
-            if (n && n.hidden) {
+            if (n && n.hidden && !(this.hideReviews && n.isReview)) {
               n.revealed = true;
               revealed = true;
             }
@@ -3066,11 +3367,67 @@ this.GraphView = class {
     this._detailMsg.style.display = "none";
     d.appendChild(this._detailMsg);
 
+    if (!node._preview) this._appendLinkLists(d, node);
+
     // Zotero / Better Notes attached to this item, previewed in place.
     if (node.zoteroItemID) {
       this._renderNotes(node).catch((e) =>
         Zotero.debug("[Citation Map] Notes preview failed: " + e)
       );
+    }
+  }
+
+  /**
+   * The paper's citation links on this map as two short clickable lists
+   * (Connected Papers' "prior / derivative works", for your collection):
+   * blue = what it cites, pink = what cites it, matching the highlighted
+   * lines. Hovering a row lights that paper up on the map; clicking selects
+   * and centres it, so you can walk the citation trail from the card.
+   */
+  _appendLinkLists(d, node) {
+    const fc = this.constructor.FOCUS_COLORS;
+    const cites = [];
+    const citedBy = [];
+    for (const e of this._active().edges) {
+      if (e.source === node.key) cites.push(this.nodeByKey.get(e.target));
+      else if (e.target === node.key) citedBy.push(this.nodeByKey.get(e.source));
+    }
+    const byCitations = (a, b) => (b.citedByCount || 0) - (a.citedByCount || 0);
+    const MAX = 6;
+    for (const [list, label, color] of [
+      [cites, "Cites on this map", fc.refs],
+      [citedBy, "Cited by on this map", fc.citers],
+    ]) {
+      const papers = list.filter(Boolean).sort(byCitations);
+      if (!papers.length) continue;
+      const box = this._el("div", "zcm-d-links");
+      const head = this._el("div", "zcm-d-links-head", `${label} (${papers.length})`);
+      head.style.cssText = `font-size:11px;font-weight:600;color:${color}`;
+      box.appendChild(head);
+      for (const n of papers.slice(0, MAX)) {
+        const row = this._el("button", "zcm-d-link", `${this._label(n)} · ${this._short(n.title)}`);
+        row.style.cssText =
+          "display:block;width:100%;text-align:left;border:0;background:none;" +
+          "color:inherit;font:inherit;font-size:12px;padding:2px 0;cursor:pointer;" +
+          "white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+        row.setAttribute("title", n.title);
+        row.addEventListener("click", () => this._select(n.key, true));
+        row.addEventListener("mouseenter", () => {
+          this.hovered = n.key;
+          this._dirty = true;
+        });
+        row.addEventListener("mouseleave", () => {
+          this.hovered = null;
+          this._dirty = true;
+        });
+        box.appendChild(row);
+      }
+      if (papers.length > MAX) {
+        const more = this._el("div", "zcm-d-more", `+ ${papers.length - MAX} more on the map`);
+        more.style.cssText = "font-size:11px;opacity:.7";
+        box.appendChild(more);
+      }
+      d.appendChild(box);
     }
   }
 
@@ -3112,7 +3469,7 @@ this.GraphView = class {
       preview.textContent = "";
       try {
         const note = Zotero.Items.get(noteIDs[idx]);
-        if (note) preview.innerHTML = this._sanitizeNoteHTML(note.getNote());
+        if (note) preview.appendChild(this._noteFragment(note.getNote()));
       } catch (e) {
         preview.appendChild(
           this._el("div", "zcm-empty", "Could not load this note.")
@@ -3123,7 +3480,7 @@ this.GraphView = class {
     next.addEventListener("click", () => show(idx + 1));
     openBtn.addEventListener("click", async () => {
       try {
-        const pane = Zotero.getActiveZoteroPane();
+        const pane = this.win.ZoteroPane || Zotero.getActiveZoteroPane();
         this.win.Zotero_Tabs.select("zotero-pane");
         await pane.selectItem(noteIDs[idx]);
       } catch (e) {
@@ -3142,30 +3499,51 @@ this.GraphView = class {
     this.details.appendChild(wrap);
   }
 
-  /** Strip anything active from note HTML before injecting it. */
-  _sanitizeNoteHTML(html) {
-    const parsed = new this.win.DOMParser().parseFromString(
-      html || "",
-      "text/html"
-    );
-    for (const el of parsed.querySelectorAll(
-      "script, iframe, object, embed, link, meta, style"
-    )) {
-      el.remove();
-    }
-    for (const el of parsed.querySelectorAll("*")) {
-      for (const attr of [...el.attributes]) {
-        const name = attr.name.toLowerCase();
-        if (name.startsWith("on")) el.removeAttribute(attr.name);
-        else if (
-          (name === "href" || name === "src") &&
-          /^\s*javascript:/i.test(attr.value)
-        ) {
-          el.removeAttribute(attr.name);
+  /**
+   * Note HTML → a safe DocumentFragment for the preview. Rebuilt node by
+   * node from an allowlist instead of assigned via innerHTML, for two
+   * reasons: the Zotero window is an XHTML (XML) document, where innerHTML
+   * parses as XML and throws on ordinary note markup such as <br> or
+   * &nbsp; ("Could not load this note."); and an allowlist can't miss an
+   * active attribute the way a blocklist can. Only http(s) links survive;
+   * everything else (scripts, styles, images, unknown tags) is dropped,
+   * keeping its text.
+   */
+  _noteFragment(html) {
+    const XHTML = "http://www.w3.org/1999/xhtml";
+    const ALLOWED = new Set([
+      "p", "br", "b", "strong", "i", "em", "u", "s", "sub", "sup", "span",
+      "div", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li",
+      "blockquote", "pre", "code", "a", "table", "thead", "tbody", "tr",
+      "td", "th", "hr",
+    ]);
+    const DROP = new Set(["script", "style", "iframe", "object", "embed", "template", "svg", "math"]);
+    const parsed = new this.win.DOMParser().parseFromString(html || "", "text/html");
+    const frag = this.doc.createDocumentFragment();
+    const copy = (src, dest) => {
+      for (const child of src.childNodes) {
+        if (child.nodeType === 3) {
+          dest.appendChild(this.doc.createTextNode(child.nodeValue));
+          continue;
         }
+        if (child.nodeType !== 1) continue;
+        const tag = child.localName.toLowerCase();
+        if (DROP.has(tag)) continue;
+        if (!ALLOWED.has(tag)) {
+          copy(child, dest); // unknown wrapper: keep its content
+          continue;
+        }
+        const el = this.doc.createElementNS(XHTML, tag);
+        if (tag === "a") {
+          const href = (child.getAttribute("href") || "").trim();
+          if (/^https?:\/\//i.test(href)) el.setAttribute("href", href);
+        }
+        copy(child, el);
+        dest.appendChild(el);
       }
-    }
-    return parsed.body.innerHTML;
+    };
+    copy(parsed.body, frag);
+    return frag;
   }
 
   // ============================================================ simulation
@@ -3200,7 +3578,14 @@ this.GraphView = class {
       this._tickTimeline();
       // Hand control back to the force layout once the glide has arrived
       // (checked here, since _animate stops calling _tick below this alpha).
-      if (this.alpha < 0.02) this._returning = false;
+      if (this.alpha < 0.02) {
+        this._returning = false;
+        if (this._unsettled) {
+          // papers that appeared while in the timeline find their place now
+          this._unsettled = false;
+          this.alpha = 0.3;
+        }
+      }
     } else {
       this._tickForce();
     }
@@ -3260,7 +3645,7 @@ this.GraphView = class {
     for (const group of this._compGroups) {
       if (group.length > 150) {
         this._forEachClosePair(
-          group.filter((n) => !n.hidden),
+          group.filter((n) => !this._hiddenFromMap(n)),
           cutoff,
           repel
         );
@@ -3278,12 +3663,16 @@ this.GraphView = class {
     }
 
     // Springs along visible edges, soft on purpose; a stiff spring makes
-    // the whole layout overshoot and wobble.
+    // the whole layout overshoot and wobble. Only WITHIN an island: islands
+    // sit at fixed anchors, and a link to another island (typically to a
+    // suggestion resting there) is drawn but must not drag papers across
+    // the map or smear the grid of unlinked papers.
     const rest = 168 * ls;
     for (const e of edges) {
       const s = this.nodeByKey.get(e.source);
       const t = this.nodeByKey.get(e.target);
       if (!s || !t) continue;
+      if (s._cluster !== t._cluster || s._cluster === -1) continue;
       const dx = t.x - s.x;
       const dy = t.y - s.y;
       const d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
@@ -3298,7 +3687,7 @@ this.GraphView = class {
       // Pull toward this node's cluster anchor (not a single global centre),
       // which keeps each island cohesive and in its packed place. Papers
       // with no links are held firmly in their grid slot.
-      const c = this.neighbors.has(n.key) ? 0.045 : 0.16;
+      const c = n._cluster === -1 ? 0.16 : 0.045;
       n.vx += (n.anchorX - n.x) * c * a;
       n.vy += (n.anchorY - n.y) * c * a;
       if (n.fixed) {
@@ -3353,7 +3742,7 @@ this.GraphView = class {
       }
     };
     if (nodes.length > 200) {
-      this._forEachClosePair(nodes, 2 * 22 + pad, collide);
+      this._forEachClosePair(nodes, 2 * 24 + pad, collide); // r is capped at 24
     } else {
       for (let i = 0; i < nodes.length; i++) {
         nodes[i]._gi = i;
@@ -3402,28 +3791,51 @@ this.GraphView = class {
     }
   }
 
+  /** The value a paper's height encodes in the timeline (see yMetric). */
+  _metricValue(n) {
+    return this.yMetric === "local"
+      ? n.inLibraryCitations || 0
+      : n.citedByCount || 0;
+  }
+
+  /** Papers with no citation data sit in a strip below the timeline axis. */
+  _hasMetric(n) {
+    return n.kind !== "unresolved";
+  }
+
   /**
-   * Timeline layout: a deterministic grid of per-year columns ("sub-maps").
+   * Timeline layout, a chart you can read without a legend:
+   *   x = publication year (oldest left), height = citations (log scale).
    *
-   * Papers are grouped by publication year; each populated year becomes a
-   * column band placed left→right in chronological order, so the oldest
-   * work is always at the far left. Empty years are skipped (they add no
-   * value), and a year's band grows wider the more papers it holds, so a
-   * burst of 2020-2026 papers spreads out into readable blocks instead of
-   * piling onto a single pixel column. Undated papers get their own band
-   * on the far left. Because positions are fixed, this layout never wobbles.
+   * Each populated year is a column band, left→right in chronological order.
+   * Empty years are skipped (a short gap marks the jump) so a lone 1970
+   * classic doesn't squash 2015–2025 into a sliver. Inside its band a paper
+   * sits at the height of its citation count, so the influential work rises
+   * to the top; papers that would overlap are swarmed sideways (beeswarm)
+   * and every band is exactly as wide as its swarm needs. Papers without
+   * citation data rest in a strip under the axis. Positions are fixed, so
+   * the layout never wobbles.
    */
   _computeTimelineLayout() {
     const nodes = this._active().nodes;
     if (!nodes.length) {
       this._timeBands = [];
+      this._timeAxis = null;
       return;
     }
-    const maxR = nodes.reduce((m, n) => Math.max(m, n.r), 8);
-    // grid cell, no two dots can overlap at 100 %; the Spacing slider
-    // tightens or relaxes the grid (never below touching distance)
-    const cell = Math.max(2 * maxR + 4, (2 * maxR + 16) * (this.spacingPct / 100));
-    const bandGap = cell * 0.75; // breathing room between year bands
+    const sp = this.spacingPct / 100;
+    // Plot height grows gently with the number of papers; the Spacing slider
+    // stretches it like everything else.
+    const H = (300 + 40 * Math.sqrt(nodes.length)) * sp;
+    const top = -H / 2;
+    const floor = H / 2;
+    const withData = nodes.filter((n) => this._hasMetric(n));
+    const maxV = withData.reduce((m, n) => Math.max(m, this._metricValue(n)), 0);
+    const logMax = Math.log10(1 + Math.max(1, maxV));
+    const yOf = (v) => floor - (Math.log10(1 + Math.max(0, v)) / logMax) * H;
+    const noData = nodes.length > withData.length;
+    const noDataY = floor + 54 * sp; // strip for papers without citation data
+    const pad = 3 + 5 * sp; // gap between neighbouring dots
 
     const byYear = new Map();
     for (const n of nodes) {
@@ -3437,70 +3849,137 @@ this.GraphView = class {
     const order = byYear.has(null) ? [null, ...years] : years;
 
     const bands = [];
+    const minBand = 34; // room for the year label under a lone dot
+    const bandGap = 12 * sp;
     let cursorX = 0;
+    let prevYear = null;
     for (const y of order) {
+      // biggest/most-cited first so they claim the band's centre line
       const group = byYear.get(y).slice().sort(
         (a, b) =>
-          b.inLibraryCitations - a.inLibraryCitations ||
-          (b.citedByCount || 0) - (a.citedByCount || 0)
+          this._metricValue(b) - this._metricValue(a) ||
+          b.r - a.r ||
+          (a.key < b.key ? -1 : 1)
       );
-      const count = group.length;
-      // more papers → wider band (denser years get more room), capped so
-      // no single year dominates the width.
-      const cols = Math.max(1, Math.min(6, Math.round(Math.sqrt(count * 0.55))));
-      const rows = Math.ceil(count / cols);
-      const bandWidth = cols * cell;
+      const placed = [];
+      for (const n of group) {
+        const ty = this._hasMetric(n) ? yOf(this._metricValue(n)) : noDataY;
+        const step = n.r * 0.5 + 1;
+        let off = 0;
+        for (let i = 0; i < 600; i++) {
+          off = i === 0 ? 0 : (i % 2 ? 1 : -1) * Math.ceil(i / 2) * step;
+          let free = true;
+          for (const p of placed) {
+            const dx = p.dx - off;
+            const dy = p.y - ty;
+            const min = p.r + n.r + pad;
+            if (dx * dx + dy * dy < min * min) {
+              free = false;
+              break;
+            }
+          }
+          if (free) break;
+        }
+        placed.push({ n, dx: off, y: ty, r: n.r });
+      }
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const p of placed) {
+        lo = Math.min(lo, p.dx - p.r);
+        hi = Math.max(hi, p.dx + p.r);
+      }
+      const width = Math.max(minBand, hi - lo);
+      // a skipped stretch of years gets a slightly wider gap (and a marker)
+      const skipped = y != null && prevYear != null ? y - prevYear - 1 : 0;
+      if (bands.length) cursorX += bandGap + (skipped > 0 ? 18 * sp : 0);
       const x0 = cursorX;
-      group.forEach((n, i) => {
-        n.tlx = x0 + (i % cols) * cell + cell / 2;
-        n.tly = Math.floor(i / cols) * cell; // stack downward
-      });
-      bands.push({ year: y, x0, x1: x0 + bandWidth, cx: x0 + bandWidth / 2, rows });
-      cursorX = x0 + bandWidth + bandGap;
+      const cx = x0 + width / 2;
+      const mid = (lo + hi) / 2;
+      for (const p of placed) {
+        p.n.tlx = cx + (p.dx - mid);
+        p.n.tly = p.y;
+      }
+      bands.push({ year: y, x0, x1: x0 + width, cx, skipped });
+      cursorX = x0 + width;
+      if (y != null) prevYear = y;
     }
 
-    // Center the whole arrangement on the origin.
-    const shiftX = (cursorX - bandGap) / 2;
-    const maxRows = bands.reduce((m, b) => Math.max(m, b.rows), 1);
-    const shiftY = ((maxRows - 1) * cell) / 2;
-    for (const n of nodes) {
-      if (n.tlx != null) {
-        n.tlx -= shiftX;
-        n.tly -= shiftY;
-      }
-    }
+    // Center horizontally on the origin (vertically the plot already is).
+    const shiftX = cursorX / 2;
+    for (const n of nodes) if (n.tlx != null) n.tlx -= shiftX;
     for (const b of bands) {
       b.x0 -= shiftX;
       b.x1 -= shiftX;
       b.cx -= shiftX;
     }
+
+    // "Nice" ticks for the height axis.
+    const ticks = [];
+    const cand =
+      this.yMetric === "local"
+        ? [0, 1, 2, 5, 10, 20, 50, 100, 200, 500]
+        : [0, 1, 10, 100, 1000, 10000, 100000, 1000000];
+    for (const v of cand) if (v <= Math.max(1, maxV)) ticks.push({ v, y: yOf(v) });
+
     this._timeBands = bands;
-    this._timeCell = cell;
-    this._timeTopY = -shiftY; // y of the top row, for header placement
+    this._timeAxis = {
+      top,
+      floor,
+      noData,
+      noDataY,
+      ticks,
+      x0: bands[0].x0,
+      x1: bands[bands.length - 1].x1,
+    };
   }
 
-  _setMode(mode) {
+  /**
+   * Switch layout. `instant` snaps straight to the target (used when the map
+   * opens in the timeline), `persist` remembers the choice for next time.
+   */
+  _setMode(mode, { instant = false, persist = true } = {}) {
     if (mode === this.mode) return;
+    if (persist) {
+      try {
+        Zotero.Prefs.set("extensions.citation-map.layoutMode", mode, true);
+      } catch (e) {
+        /* best-effort */
+      }
+    }
+    // A dragged (pinned) paper must not hold out against the new layout.
+    for (const n of this.graph.nodes) n.fixed = false;
     if (mode === "timeline") {
       // Remember the exact network layout (islands and all) so we can glide
       // straight back to it later, instead of re-running a live force reflow
       // from the spread-out timeline positions, which scattered the islands.
-      for (const n of this.graph.nodes) {
-        n._netX = n.x;
-        n._netY = n.y;
+      // Mid-way through a glide back, x/y are half-way positions: the real
+      // network targets are still the remembered ones, so keep those.
+      if (!this._returning) {
+        for (const n of this.graph.nodes) {
+          n._netX = n.x;
+          n._netY = n.y;
+        }
       }
       this.mode = "timeline";
       this._returning = false;
       this._computeTimelineLayout();
-      this.alpha = 1; // ease into the grid
+      this.alpha = 1; // ease into the chart
+      if (instant) {
+        for (const n of this._active().nodes) {
+          if (n.tlx == null) continue;
+          n.x = n.tlx;
+          n.y = n.tly;
+        }
+        this.alpha = 0;
+      }
     } else {
       // Returning to the network: ease every node back to its remembered
       // position with the same monotonic approach the timeline uses (no
       // forces, so it cannot overshoot, wobble, or fling islands apart).
       this.mode = "force";
       for (const n of this._active().nodes) {
-        n.tlx = n._netX != null ? n._netX : n.x;
-        n.tly = n._netY != null ? n._netY : n.y;
+        n.tlx = n._netX != null ? n._netX : n.anchorX != null ? n.anchorX : n.x;
+        n.tly = n._netY != null ? n._netY : n.anchorY != null ? n.anchorY : n.y;
       }
       this._returning = true;
       this.alpha = 1;
@@ -3508,6 +3987,7 @@ this.GraphView = class {
     this.btnForce.classList.toggle("zcm-on", this.mode === "force");
     this.btnTime.classList.toggle("zcm-on", this.mode === "timeline");
     this._dirty = true;
+    if (instant) return; // the caller fits the view
     // Re-fit once the new layout has settled.
     this.win.setTimeout(() => {
       if (!this._destroyed) {
@@ -3545,6 +4025,17 @@ this.GraphView = class {
     this.canvas.style.height = this.height + "px";
     this.dpr = dpr;
     this._dirty = true;
+    // the stage shrank (window, sidebar): keep the details card reachable
+    this._ensureDetailOnScreen();
+  }
+
+  /** Is this map the tab in front? (Background tabs skip work and keys.) */
+  _isVisible() {
+    const tabs = this.win.Zotero_Tabs;
+    if (this._tabID && tabs && tabs.selectedID != null) {
+      return tabs.selectedID === this._tabID;
+    }
+    return true;
   }
 
   _css(name) {
@@ -3588,12 +4079,19 @@ this.GraphView = class {
     }
     const w = Math.max(60, maxX - minX);
     const h = Math.max(60, maxY - minY);
+    // the timeline's axes need room: tick values and title on the left,
+    // year labels and the map key underneath
+    const padL = this.mode === "timeline" ? 64 : 0;
+    const padB = this.mode === "timeline" ? 60 : 24;
     const k = Math.max(
-      0.12, // don't zoom out to microscopic; tighter packing keeps this rare
-      Math.min(2, Math.min((this.width - 60) / w, (this.height - 60) / h))
+      this.constructor.MIN_ZOOM, // the same floor as wheel and buttons
+      Math.min(
+        2,
+        Math.min((this.width - 60 - padL) / w, (this.height - 60 - padB) / h)
+      )
     );
-    const tx = (-(minX + maxX) / 2) * k;
-    const ty = (-(minY + maxY) / 2) * k;
+    const tx = (-(minX + maxX) / 2) * k + padL / 2;
+    const ty = (-(minY + maxY) / 2) * k - padB / 2;
     // Smoothly glide to the fitted view (nicer than snapping), except on the
     // very first fit where there's nothing to animate from.
     if (animate && this._didInitialFit) {
@@ -3628,7 +4126,9 @@ this.GraphView = class {
 
   /** Never let the graph leave the viewport entirely. */
   _clampTransform() {
-    if (!this.graph.nodes.length) return;
+    // nothing visible (e.g. every paper a hidden review): no bounds to clamp
+    // to, and Infinity here would poison the transform for good
+    if (!this._active().nodes.length) return;
     const { minX, maxX, minY, maxY } = this._bounds();
     const t = this.transform;
     const m = 60; // px of graph that must stay visible
@@ -3645,7 +4145,7 @@ this.GraphView = class {
 
   /** Zoom by a factor toward the canvas center (for the +/− buttons). */
   _zoomBy(factor) {
-    const k2 = Math.max(0.2, Math.min(5, this.transform.k * factor));
+    const k2 = Math.max(this.constructor.MIN_ZOOM, Math.min(5, this.transform.k * factor));
     const ratio = k2 / this.transform.k;
     this.transform.x *= ratio;
     this.transform.y *= ratio;
@@ -3656,6 +4156,12 @@ this.GraphView = class {
   _animate() {
     if (this._destroyed) return;
     this.win.requestAnimationFrame(() => this._animate());
+    // A map in a background tab (library or PDF in front) does nothing;
+    // it redraws once it is shown again.
+    if (!this._isVisible()) {
+      this._dirty = true;
+      return;
+    }
     // The loop always runs (so it can never get stuck), but the canvas is
     // only redrawn when something actually changed, a static, settled map
     // costs nothing.
@@ -3702,9 +4208,14 @@ this.GraphView = class {
       library: this._css("--zcm-node") || "#f2eddd",
       discovered: this._css("--zcm-amber") || "#f0a63f",
       unresolved: this._css("--zcm-slate") || "#66708c",
-      edge: this._css("--zcm-edge") || "#39415f",
+      // lighter than the stylesheet's #39415f, which was barely visible
+      // (about 1.2:1 against the background)
+      edge: "#5a6690",
       chain: this._css("--zcm-teal") || "#46d3c2",
       coupling: this._css("--zcm-violet") || "#8b7ff0",
+      // direction around a focused paper (inline, so CSS caching can't hide them)
+      refs: this.constructor.FOCUS_COLORS.refs, // papers it cites
+      citers: this.constructor.FOCUS_COLORS.citers, // papers citing it
       newmark: "#ffd97a",
       text: this._css("--zcm-text") || "#e9ecf5",
       muted: this._css("--zcm-muted") || "#8e96b0",
@@ -3720,49 +4231,89 @@ this.GraphView = class {
     ctx.translate(this.width / 2 + tx, this.height / 2 + ty);
     ctx.scale(k, k);
 
-    // ---- year columns (timeline mode)
-    if (this.mode === "timeline" && this._timeBands && this._timeBands.length) {
-      const cell = this._timeCell;
+    // ---- timeline chart: year bands, citation axis, gridlines
+    const ax = this.mode === "timeline" ? this._timeAxis : null;
+    if (ax && this._timeBands && this._timeBands.length) {
+      const sp = this.spacingPct / 100;
       const viewTop = (-this.height / 2 - ty) / k;
       const viewBot = (this.height / 2 - ty) / k;
-      // year headers ride just below the top of the viewport, so they
-      // stay visible however far you scroll down a tall column.
-      const headerY = viewTop + 16 / k;
-      ctx.textAlign = "center";
+      const viewLeft = (-this.width / 2 - tx) / k;
+      const plotBottom = ax.noData ? ax.noDataY + 18 * sp : ax.floor + 10;
+      const bandTop = Math.max(viewTop, ax.top - 34);
+      const bandBot = Math.min(viewBot, plotBottom + 6);
+      // subtle alternating band background makes each year scannable
       this._timeBands.forEach((b, i) => {
-        // subtle alternating band background makes each year scannable
-        if (i % 2 === 1) {
+        if (i % 2 === 1 && bandBot > bandTop) {
           ctx.fillStyle = "rgba(147, 161, 199, 0.05)";
-          ctx.fillRect(
-            b.x0 - cell * 0.15,
-            viewTop,
-            b.x1 - b.x0 + cell * 0.3,
-            viewBot - viewTop
-          );
-        }
-        // one evenly-spaced header per band, no overlap, unlike the old rail
-        const pxWidth = (b.x1 - b.x0) * k;
-        if (pxWidth > 24) {
-          const label = b.year == null ? "undated" : String(b.year);
-          ctx.font = `600 ${12 / k}px ui-monospace, Menlo, Consolas, monospace`;
-          ctx.fillStyle = colors.muted;
-          ctx.fillText(label, b.cx, headerY);
+          ctx.fillRect(b.x0 - 5 * sp, bandTop, b.x1 - b.x0 + 10 * sp, bandBot - bandTop);
         }
       });
-      // "older → newer" hint under the headers
-      ctx.font = `${10 / k}px -apple-system, "Segoe UI", system-ui, sans-serif`;
+      // horizontal gridlines; tick labels pinned inside the left edge of the
+      // viewport, so the scale stays readable however far you pan
+      const tickX = Math.max(ax.x0 - 10 / k, viewLeft + 54 / k);
+      ctx.lineWidth = 1 / k;
+      ctx.strokeStyle = colors.muted;
       ctx.fillStyle = colors.muted;
+      ctx.font = `${10 / k}px ui-monospace, Menlo, Consolas, monospace`;
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "right";
+      for (const t of ax.ticks) {
+        ctx.globalAlpha = t.v === 0 ? 0.3 : 0.13;
+        ctx.beginPath();
+        ctx.moveTo(ax.x0 - 8, t.y);
+        ctx.lineTo(ax.x1 + 8, t.y);
+        ctx.stroke();
+        ctx.globalAlpha = 0.8;
+        ctx.fillText(this._fmtCount(t.v), tickX, t.y);
+      }
+      if (ax.noData) {
+        ctx.globalAlpha = 0.6;
+        ctx.fillText("no data", tickX, ax.noDataY);
+      }
+      // axis title, rotated, reading bottom → top
+      ctx.save();
+      ctx.translate(tickX - 44 / k, (ax.top + ax.floor) / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = "center";
+      ctx.globalAlpha = 0.85;
+      ctx.font = `600 ${11 / k}px -apple-system, "Segoe UI", system-ui, sans-serif`;
+      ctx.fillText(
+        this.yMetric === "local"
+          ? "Cited by papers on this map →"
+          : "Citations worldwide (log) →",
+        0,
+        0
+      );
+      ctx.restore();
+      // year labels under the plot (pinned to the viewport bottom if the
+      // plot runs below it); dense years skip labels that would collide
+      // (kept clear of the map key along the bottom edge)
+      const yearY = Math.min(viewBot - 46 / k, plotBottom + 12 / k);
+      ctx.font = `600 ${11 / k}px ui-monospace, Menlo, Consolas, monospace`;
+      ctx.textAlign = "center";
+      let lastRight = -Infinity;
+      for (const b of this._timeBands) {
+        if (b.skipped > 0) {
+          // a jump over empty years: a small break mark on the baseline
+          ctx.globalAlpha = 0.55;
+          ctx.fillText("⋯", b.x0 - 15 * sp, ax.floor);
+        }
+        const label = b.year == null ? "undated" : String(b.year);
+        const w = ctx.measureText(label).width;
+        if (b.cx - w / 2 < lastRight + 6 / k) continue;
+        ctx.globalAlpha = 0.9;
+        ctx.fillText(label, b.cx, yearY);
+        lastRight = b.cx + w / 2;
+      }
+      ctx.font = `${10 / k}px -apple-system, "Segoe UI", system-ui, sans-serif`;
       ctx.globalAlpha = 0.6;
       ctx.textAlign = "left";
-      ctx.fillText("← older", this._timeBands[0].x0, headerY + 16 / k);
+      ctx.fillText("← older", ax.x0, yearY + 15 / k);
       ctx.textAlign = "right";
-      ctx.fillText(
-        "newer →",
-        this._timeBands[this._timeBands.length - 1].x1,
-        headerY + 16 / k
-      );
+      ctx.fillText("newer →", ax.x1, yearY + 15 / k);
       ctx.globalAlpha = 1;
       ctx.textAlign = "center";
+      ctx.textBaseline = "alphabetic";
     }
 
     const chainSet = new Set(this.activeChain || []);
@@ -3776,6 +4327,16 @@ this.GraphView = class {
     const focusSet = focus
       ? new Set([focus, ...(this.neighbors.get(focus) || [])])
       : null;
+    // Direction around the focused paper: what it cites (its references,
+    // older work it builds on) vs. what cites it (newer work building on it).
+    const focusOut = new Set();
+    const focusIn = new Set();
+    if (focus) {
+      for (const e of activeEdges) {
+        if (e.source === focus) focusOut.add(e.target);
+        else if (e.target === focus) focusIn.add(e.source);
+      }
+    }
 
     // ---- coupling links (dashed "sibling" layer, beneath the arrows)
     if (this.showCoupling && this.graph.coupling.length) {
@@ -3784,7 +4345,7 @@ this.GraphView = class {
         if (c.shared < this.couplingMin) continue;
         const a = this.nodeByKey.get(c.a);
         const b = this.nodeByKey.get(c.b);
-        if (!a || !b || a.hidden || b.hidden) continue;
+        if (!a || !b || this._hiddenFromMap(a) || this._hiddenFromMap(b)) continue;
         let alpha = Math.min(0.45, 0.1 + c.shared * 0.04);
         if (focusSet && !(focusSet.has(c.a) && focusSet.has(c.b))) alpha = 0.04;
         if (this.activeChain) alpha = Math.min(alpha, 0.05);
@@ -3800,29 +4361,68 @@ this.GraphView = class {
       ctx.globalAlpha = 1;
     }
 
-    // ---- edges (arrow from citing → cited)
+    // ---- edges (arrow from citing → cited). Straight in the network; in
+    // the timeline a gentle upward arc, so the many citations of one classic
+    // fan out instead of stacking into a single thick line.
+    const curved = this.mode === "timeline";
     for (const e of activeEdges) {
       const s = this.nodeByKey.get(e.source);
       const t = this.nodeByKey.get(e.target);
       if (!s || !t) continue;
       const onChain = chainEdges.has(e.source + ">" + e.target);
       let alpha = baseEdgeAlpha;
-      if (focusSet && !(focusSet.has(e.source) && focusSet.has(e.target)))
-        alpha = 0.06;
+      let color = colors.edge;
+      let width = 1.1;
+      if (focus) {
+        if (e.source === focus) {
+          color = colors.refs; // the focused paper cites this one
+          alpha = 0.9;
+          width = 1.7;
+        } else if (e.target === focus) {
+          color = colors.citers; // this one cites the focused paper
+          alpha = 0.9;
+          width = 1.7;
+        } else {
+          alpha = 0.05;
+        }
+      }
       if (this.activeChain && !onChain) alpha = Math.min(alpha, 0.08);
-      ctx.globalAlpha = onChain ? 0.95 : alpha;
-      ctx.strokeStyle = onChain ? colors.chain : colors.edge;
-      ctx.lineWidth = ((onChain ? 2.4 : 1.1) * ew) / k;
+      if (onChain) {
+        color = colors.chain;
+        alpha = 0.95;
+        width = 2.4;
+      }
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = (width * ew) / k;
       ctx.setLineDash(onChain ? [7 / k, 5 / k] : []);
       ctx.lineDashOffset = onChain ? this.dashOffset / k : 0;
+      let fx = s.x; // the point the arrow's last segment comes from
+      let fy = s.y;
       ctx.beginPath();
       ctx.moveTo(s.x, s.y);
-      ctx.lineTo(t.x, t.y);
+      if (curved) {
+        const ex = t.x - s.x;
+        const ey = t.y - s.y;
+        const len = Math.hypot(ex, ey) || 1;
+        let px = -ey / len;
+        let py = ex / len;
+        if (py > 0) {
+          px = -px; // always bow upward
+          py = -py;
+        }
+        const bow = Math.min(60, len * 0.18);
+        fx = (s.x + t.x) / 2 + px * bow;
+        fy = (s.y + t.y) / 2 + py * bow;
+        ctx.quadraticCurveTo(fx, fy, t.x, t.y);
+      } else {
+        ctx.lineTo(t.x, t.y);
+      }
       ctx.stroke();
       ctx.setLineDash([]);
-      // arrowhead at the cited end
-      const dx = t.x - s.x;
-      const dy = t.y - s.y;
+      // arrowhead at the cited end, along the line's final direction
+      const dx = t.x - fx;
+      const dy = t.y - fy;
       const d = Math.max(1, Math.hypot(dx, dy));
       const ax = t.x - (dx / d) * (t.r + 4);
       const ay = t.y - (dy / d) * (t.r + 4);
@@ -3830,7 +4430,7 @@ this.GraphView = class {
       // arrowheads grow with the line width, but gently (sqrt), so thick
       // lines don't turn every arrow into a wedge
       const sz = ((onChain ? 7 : 5) * Math.sqrt(ew)) / k;
-      ctx.fillStyle = onChain ? colors.chain : colors.edge;
+      ctx.fillStyle = color;
       ctx.beginPath();
       ctx.moveTo(ax, ay);
       ctx.lineTo(ax - sz * Math.cos(ang - 0.45), ay - sz * Math.sin(ang - 0.45));
@@ -3840,6 +4440,10 @@ this.GraphView = class {
 
     // ---- nodes
     ctx.globalAlpha = 1;
+    // Label budget: only the most-cited papers are labelled when zoomed out,
+    // zooming in reveals the rest; collisions are resolved after the loop.
+    const maxLabels = k > 1.6 ? Infinity : k > 0.9 ? 40 : 18;
+    const labelCands = [];
     for (const n of this.graph.nodes) {
       if (this._hiddenFromMap(n)) continue;
       const matches =
@@ -3852,43 +4456,66 @@ this.GraphView = class {
       if (this.activeChain && !chainSet.has(n.key)) dim = true;
       if (!this._passesFilters(n)) dim = true;
 
-      // teased suggestions ("Top" mode) are shown softly, as an invitation
-      const baseAlpha = n.teased && !dim ? 0.55 : 1;
-      ctx.globalAlpha = dim ? 0.15 : baseAlpha;
+      const fill = this._nodeFill(n, colors);
       ctx.beginPath();
       ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
-      ctx.fillStyle = this._nodeFill(n, colors);
-      ctx.fill();
-      // Rim (publisher mode): papers from a recognised journal take the
-      // publisher's brand colour (brightened for the dark map) so the source
-      // is identifiable at a glance; other color modes use a neutral rim so
-      // the mode's fill colors stay readable.
-      const ci = this.colorMode === "publisher" ? this._ci(n) : null;
-      if (ci && ci.matched && ci.primary && ZCM_VIEW_NS.PublisherCI) {
-        ctx.strokeStyle = ZCM_VIEW_NS.PublisherCI.onDark(ci.primary);
-        ctx.lineWidth = 1.8 / k;
-      } else {
-        ctx.strokeStyle = "rgba(10, 14, 26, 0.5)";
-        ctx.lineWidth = 1 / k;
-      }
-      ctx.stroke();
-
-      if (n.kind === "discovered" && !dim) {
-        // soft halo, amber for reference-based suggestions, violet for
-        // papers the Discover search placed on the map
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, n.r + 5 / k, 0, Math.PI * 2);
-        ctx.strokeStyle = n._injected ? colors.coupling : colors.discovered;
-        ctx.globalAlpha = n.teased ? 0.18 : 0.35;
-        ctx.lineWidth = 3 / k;
+      if (n.kind === "discovered") {
+        // NOT in your library (yet): an open ring, so the shape alone says
+        // "suggestion" (filled dots are yours). Amber for suggestions from
+        // your references, violet for papers the Discover search placed;
+        // "Top" mode's teased few are a little softer.
+        const ring =
+          this.colorMode === "kind"
+            ? n._injected
+              ? colors.coupling
+              : colors.discovered
+            : fill;
+        ctx.globalAlpha = dim ? 0.05 : 0.16;
+        ctx.fillStyle = ring;
+        ctx.fill();
+        ctx.globalAlpha = dim ? 0.18 : n.teased ? 0.75 : 1;
+        ctx.strokeStyle = ring;
+        ctx.lineWidth = 2.4 / k;
         ctx.stroke();
-        ctx.globalAlpha = dim ? 0.15 : baseAlpha;
+        if (n._injected && this.colorMode !== "kind" && !dim) {
+          ctx.beginPath(); // keep "found by search" visible in every mode
+          ctx.arc(n.x, n.y, n.r + 4.5 / k, 0, Math.PI * 2);
+          ctx.strokeStyle = colors.coupling;
+          ctx.globalAlpha = 0.5;
+          ctx.lineWidth = 2 / k;
+          ctx.stroke();
+        }
+      } else {
+        ctx.globalAlpha = dim ? 0.15 : 1;
+        ctx.fillStyle = fill;
+        ctx.fill();
+        // Rim (publisher mode): papers from a recognised journal take the
+        // publisher's brand colour (brightened for the dark map) so the
+        // source is identifiable at a glance; other color modes use a
+        // neutral rim so the mode's fill colors stay readable.
+        const ci = this.colorMode === "publisher" ? this._ci(n) : null;
+        if (ci && ci.matched && ci.primary && ZCM_VIEW_NS.PublisherCI) {
+          ctx.strokeStyle = ZCM_VIEW_NS.PublisherCI.onDark(ci.primary);
+          ctx.lineWidth = 1.8 / k;
+        } else {
+          ctx.strokeStyle = "rgba(10, 14, 26, 0.5)";
+          ctx.lineWidth = 1 / k;
+        }
+        ctx.stroke();
       }
+      ctx.globalAlpha = dim ? 0.15 : 1;
       if (n.key === this.selected) {
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r + 3.5 / k, 0, Math.PI * 2);
         ctx.strokeStyle = colors.text;
         ctx.lineWidth = 1.6 / k;
+        ctx.stroke();
+      } else if (!dim && (focusOut.has(n.key) || focusIn.has(n.key))) {
+        // a neighbour of the focused paper, ringed in its link's colour
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r + 2.5 / k, 0, Math.PI * 2);
+        ctx.strokeStyle = focusOut.has(n.key) ? colors.refs : colors.citers;
+        ctx.lineWidth = 2 / k;
         ctx.stroke();
       }
       // ★ new since the last build of this collection
@@ -3916,31 +4543,52 @@ this.GraphView = class {
         ctx.textBaseline = "alphabetic";
       }
 
-      // Labels: a budget keeps the map readable, only the most-cited
-      // papers are labelled when zoomed out; zooming in reveals the rest.
-      // Focused and chain papers are always labelled.
-      const maxLabels = k > 1.6 ? Infinity : k > 0.9 ? 28 : 12;
-      if (
-        !dim &&
-        (n._rank < maxLabels || n.key === focus || chainSet.has(n.key))
-      ) {
-        const ly = n.y + n.r + 13 / k;
-        ctx.font = `${11 / k}px -apple-system, "Segoe UI", system-ui, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.lineJoin = "round";
-        ctx.lineWidth = 3 / k;
-        ctx.strokeStyle = colors.bg; // halo so labels survive busy edges
-        const label = this._label(n);
-        ctx.strokeText(label, n.x, ly);
-        ctx.fillStyle = colors.text;
-        ctx.fillText(label, n.x, ly);
-        if (n.year && this.mode !== "timeline") {
-          ctx.font = `${9.5 / k}px ui-monospace, Menlo, Consolas, monospace`;
-          ctx.strokeText(String(n.year), n.x, ly + 12 / k);
-          ctx.fillStyle = colors.muted;
-          ctx.fillText(String(n.year), n.x, ly + 12 / k);
-        }
+      // label priority: the focused/selected paper, then a highlighted
+      // chain, then the focused paper's neighbours, then by citations
+      if (!dim) {
+        let pri = null;
+        if (n.key === focus || n.key === this.selected) pri = 0;
+        else if (chainSet.has(n.key)) pri = 1;
+        else if (focusSet && focusSet.has(n.key)) pri = 2;
+        else if (this.query && matches) pri = 2;
+        else if (n._rank < maxLabels) pri = 3 + n._rank;
+        if (pri != null) labelCands.push({ n, pri });
       }
+    }
+
+    // ---- labels ("Surname Year"), placed greedily by priority; a label
+    // that would overlap one already placed is skipped (zoom in to see it),
+    // so dense areas stay readable instead of turning into a smear.
+    labelCands.sort((a, b) => a.pri - b.pri);
+    ctx.globalAlpha = 1;
+    ctx.font = `${11 / k}px -apple-system, "Segoe UI", system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 3 / k;
+    const placedLabels = [];
+    for (const { n, pri } of labelCands) {
+      const label = this._label(n);
+      const w = ctx.measureText(label).width;
+      const ly = n.y + n.r + 13 / k;
+      const box = {
+        x0: n.x - w / 2 - 2 / k,
+        x1: n.x + w / 2 + 2 / k,
+        y0: ly - 11 / k,
+        y1: ly + 3 / k,
+      };
+      if (
+        pri > 0 &&
+        placedLabels.some(
+          (b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1
+        )
+      ) {
+        continue;
+      }
+      placedLabels.push(box);
+      ctx.strokeStyle = colors.bg; // halo so labels survive busy edges
+      ctx.strokeText(label, n.x, ly);
+      ctx.fillStyle = colors.text;
+      ctx.fillText(label, n.x, ly);
     }
 
     // ---- cluster labels (network mode): each island's dominant topic,
@@ -3956,7 +4604,7 @@ this.GraphView = class {
           let top = Infinity;
           let cnt = 0;
           for (const n of cl.nodes) {
-            if (n.hidden) continue;
+            if (this._hiddenFromMap(n)) continue;
             sx += n.x;
             sy += n.y;
             if (n.y - n.r < top) top = n.y - n.r;
@@ -3978,16 +4626,118 @@ this.GraphView = class {
         ctx.globalAlpha = 1;
       }
     }
+    // ---- the grid of papers with no citation link to the rest gets a
+    // caption, so it doesn't read as an unexplained block
+    const se = this._singlesEntry;
+    if (this.mode === "force" && se && se.nodes.length >= 2) {
+      let sx = 0;
+      let top = Infinity;
+      let cnt = 0;
+      for (const n of se.nodes) {
+        if (this._hiddenFromMap(n)) continue;
+        sx += n.x;
+        top = Math.min(top, n.y - n.r);
+        cnt++;
+      }
+      if (cnt >= 2) {
+        ctx.globalAlpha = 0.7;
+        ctx.textAlign = "center";
+        ctx.font = `600 ${11 / k}px -apple-system, "Segoe UI", system-ui, sans-serif`;
+        ctx.fillStyle = colors.muted;
+        ctx.fillText(`Not linked to the others (${cnt})`, sx / cnt, top - 12 / k);
+        ctx.globalAlpha = 1;
+      }
+    }
     ctx.restore();
+
+    this._drawMapKey(ctx, colors, focus, focusOut.size, focusIn.size);
+  }
+
+  /**
+   * One line in the map's bottom-left corner saying what position and size
+   * mean in the current layout; while a paper is focused it explains the
+   * blue/pink links instead. Drawn on the canvas (screen space), so it is
+   * always present and can't be lost to a stale stylesheet.
+   */
+  _drawMapKey(ctx, colors, focus, nOut, nIn) {
+    const parts = [];
+    if (focus) {
+      parts.push([colors.refs, `cites ${nOut} (older work it builds on)`]);
+      parts.push([colors.citers, `cited by ${nIn} (newer work building on it)`]);
+    } else if (this.mode === "timeline") {
+      parts.push([null, "Left → right: year"]);
+      parts.push([
+        null,
+        this.yMetric === "local"
+          ? "Higher: cited by more papers on this map"
+          : "Higher: more citations worldwide",
+      ]);
+      parts.push([null, "Bigger dot: cited by more of your papers"]);
+    } else {
+      parts.push([null, "Islands: papers linked by citations"]);
+      parts.push([null, "Arrows point to the cited paper"]);
+      parts.push([null, "Bigger dot: cited by more of your papers"]);
+    }
+    ctx.save();
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.font = `11px -apple-system, "Segoe UI", system-ui, sans-serif`;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    const gap = 14;
+    const widthOf = (p) => (p[0] ? 12 : 0) + ctx.measureText(p[1]).width;
+    // drop trailing parts that don't fit a narrow map
+    const avail = this.width - 24 - 120; // leave room for the zoom buttons
+    while (
+      parts.length > 1 &&
+      parts.reduce((s, p) => s + widthOf(p), 0) + gap * (parts.length - 1) > avail
+    ) {
+      parts.pop();
+    }
+    const total =
+      parts.reduce((s, p) => s + widthOf(p), 0) + gap * (parts.length - 1);
+    const y = this.height - 15;
+    ctx.globalAlpha = 0.78;
+    ctx.fillStyle = colors.bg;
+    ctx.fillRect(6, y - 10, total + 12, 20);
+    let x = 12;
+    for (const [color, text] of parts) {
+      if (color) {
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x + 4, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        x += 12;
+      }
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = colors.muted;
+      ctx.fillText(text, x, y);
+      x += ctx.measureText(text).width + gap;
+    }
+    ctx.restore();
+  }
+
+  /** 0, 1, 10, 100, 1k, 10k, 1M, compact axis numbers. */
+  _fmtCount(v) {
+    if (v >= 1e6) return v / 1e6 + "M";
+    if (v >= 1e3) return v / 1e3 + "k";
+    return String(v);
   }
 
   _label(n) {
     const a = n.authors && n.authors[0];
     if (a) {
-      const surname = a.split(" ").pop();
+      // OpenAlex gives "Jane Smith"; Zotero's firstCreator (unresolved
+      // papers) gives "Smith", "Smith and Jones" or "Smith et al."
+      const first = String(a)
+        .replace(/\s+et\s+al\.?\s*$/i, "")
+        .split(/\s+(?:and|&)\s+/)[0]
+        .trim();
+      const surname = first.split(" ").pop() || first;
       return n.year ? `${surname} ${n.year}` : surname;
     }
-    return this._short(n.title).slice(0, 22);
+    const t = this._short(n.title).slice(0, 22);
+    return n.year ? `${t} ${n.year}` : t;
   }
 
   // ============================================================ interaction
@@ -4024,9 +4774,18 @@ this.GraphView = class {
 
     c.addEventListener("wheel", (ev) => {
       ev.preventDefault();
-      // gentle steps, strong zoom made the map easy to lose
-      const factor = ev.deltaY < 0 ? 1.06 : 1 / 1.06;
-      const k2 = Math.max(0.2, Math.min(5, this.transform.k * factor));
+      // Zoom in proportion to the scroll amount: a mouse notch is a gentle
+      // step, while a trackpad's stream of tiny deltas no longer races
+      // (a fixed step per event made trackpad zoom far too fast).
+      if (!ev.ctrlKey && Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) {
+        // a sideways trackpad swipe pans
+        this.transform.x -= ev.deltaX * (ev.deltaMode === 1 ? 16 : 1);
+        this._clampTransform();
+        return;
+      }
+      const unit = ev.deltaMode === 1 ? 0.05 : ev.deltaMode === 2 ? 1 : 0.0025;
+      const factor = Math.max(0.8, Math.min(1.25, Math.exp(-ev.deltaY * unit)));
+      const k2 = Math.max(this.constructor.MIN_ZOOM, Math.min(5, this.transform.k * factor));
       // zoom toward the cursor
       const rect = c.getBoundingClientRect();
       const mx = ev.clientX - rect.left - this.width / 2;
@@ -4039,13 +4798,10 @@ this.GraphView = class {
 
     c.addEventListener("mousedown", (ev) => {
       const p = this._toGraphCoords(ev);
-      dragNode = this._nodeAt(p);
-      if (dragNode) {
-        dragNode.fixed = true;
-        this.alpha = Math.max(this.alpha, 0.12);
-      } else {
-        panning = true;
-      }
+      // Dragging a paper repositions (and pins) it in the network. In the
+      // timeline its position IS its data, so a drag there pans instead.
+      dragNode = this.mode === "timeline" ? null : this._nodeAt(p);
+      if (!dragNode) panning = true;
       last = { x: ev.clientX, y: ev.clientY };
       downPt = { x: ev.clientX, y: ev.clientY };
       moved = false;
@@ -4061,9 +4817,13 @@ this.GraphView = class {
         }
       }
       if (dragNode) {
-        dragNode.x = p.x;
-        dragNode.y = p.y;
-        this.alpha = Math.max(this.alpha, 0.08);
+        // a plain click must not pin: only an actual drag does
+        if (moved) {
+          dragNode.fixed = true;
+          dragNode.x = p.x;
+          dragNode.y = p.y;
+          this.alpha = Math.max(this.alpha, 0.08);
+        }
       } else if (panning && last) {
         this.transform.x += ev.clientX - last.x;
         this.transform.y += ev.clientY - last.y;
@@ -4164,6 +4924,26 @@ this.GraphView = class {
     }
     cites.push(`${node.inLibraryCitations} in this collection`);
     this.tooltip.appendChild(this._el("div", "zcm-tt-meta", cites.join(" · ")));
+    // its links on the map, in the same blue/pink as the highlighted lines
+    let nOut = 0;
+    let nIn = 0;
+    for (const e of this._active().edges) {
+      if (e.source === node.key) nOut++;
+      else if (e.target === node.key) nIn++;
+    }
+    if (nOut || nIn) {
+      const fc = this.constructor.FOCUS_COLORS;
+      const links = this._el("div", "zcm-tt-meta");
+      const out = this._el("span", null, `cites ${nOut}`);
+      out.style.color = fc.refs;
+      const inc = this._el("span", null, `cited by ${nIn}`);
+      inc.style.color = fc.citers;
+      links.appendChild(this._el("span", null, "On this map: "));
+      links.appendChild(out);
+      links.appendChild(this._el("span", null, " · "));
+      links.appendChild(inc);
+      this.tooltip.appendChild(links);
+    }
     this.tooltip.appendChild(
       this._el("div", "zcm-tt-hint", "click = details · double-click = open")
     );
@@ -4298,6 +5078,7 @@ this.GraphView = class {
     this._detailKeyHandler = (ev) => {
       if (
         ev.key === "Escape" &&
+        this._isVisible() && // not from a PDF/library tab in front of us
         this._detailCard &&
         this._detailCard.style.display !== "none"
       ) {
@@ -4382,6 +5163,8 @@ this.GraphView = class {
       dragging = false;
       this.doc.removeEventListener("mousemove", onMove, true);
       this.doc.removeEventListener("mouseup", onUp, true);
+      // dropped half off the map (header and × unreachable)? pull it back
+      this._ensureDetailOnScreen();
     };
     handle.addEventListener("mousedown", (ev) => {
       if (except && ev.target === except) return;
@@ -4587,16 +5370,32 @@ this.GraphView = class {
       {
         title: "Your citation map",
         body:
-          "Every dot is a paper, the bigger, the more the other papers " +
-          "here cite it. Arrows point at the cited paper, back in time.",
+          "Every dot is a paper. In the Timeline, left → right is the year " +
+          "it came out and HIGHER means more cited, so the classics sit " +
+          "top-left. Bigger dots are cited by more of your papers. The line " +
+          "in the bottom-left corner always says what you're looking at.",
+      },
+      {
+        target: () => this._layoutToggle,
+        title: "Timeline or Network",
+        body:
+          "Network groups papers that cite each other into islands, " +
+          "labelled by topic. Switch any time; the map remembers your choice.",
+      },
+      {
+        title: "Follow the citations",
+        body:
+          "Hover or click a paper: BLUE lines lead to the papers it cites, " +
+          "PINK lines come from the papers citing it. The details card " +
+          "lists both, click an entry to walk along the trail.",
       },
       {
         target: () => this.legend,
         title: "The colors",
         body:
-          "Ivory = in your library · amber = suggested · grey = no " +
-          "citation data. This legend always shows what the colors " +
-          "currently mean.",
+          "Filled ivory = in your library · open amber ring = suggested " +
+          "(not yours yet) · grey = no citation data. This legend always " +
+          "shows what the colors currently mean.",
       },
       {
         target: () => this._mapControls,
@@ -4627,9 +5426,9 @@ this.GraphView = class {
         target: () => this._displayBtn,
         title: "Display",
         body:
-          "Choose what the colors mean, publisher, year, cluster, open " +
-          "access, and reveal dashed links between papers that share " +
-          "references.",
+          "Choose what the colors mean (publisher, year, cluster, open " +
+          "access), what the Timeline's height measures, spacing and line " +
+          "thickness, and dashed links between papers sharing references.",
       },
       {
         target: () => this._filterBtn,
@@ -4719,7 +5518,51 @@ this.GraphView = class {
           },
         ],
       },
-      // Future releases: add { since: "1.10", steps: [ … ] } here.
+      {
+        since: "1.10",
+        steps: [
+          {
+            target: () => this._layoutToggle,
+            title: "A Timeline that reads like a chart",
+            body:
+              "Left → right = publication year, higher = more cited (log " +
+              "scale), so classics sit top-left and fresh work bottom-right. " +
+              "It's the new default; Network is one click away, and the map " +
+              "remembers your choice.",
+          },
+          {
+            title: "Follow the citations",
+            body:
+              "Hover or click a paper: blue lines lead to what it cites, " +
+              "pink lines come from what cites it. The details card lists " +
+              "both, click an entry to walk along the trail.",
+          },
+          {
+            target: () => this.legend,
+            title: "Suggestions are open rings",
+            body:
+              "Papers you don't own yet are drawn as open rings, your own " +
+              "papers as filled dots, and labels no longer pile on top of " +
+              "each other.",
+          },
+          {
+            target: () => this._displayBtn,
+            title: "Display, tidied up",
+            body:
+              "Spacing and line thickness moved in here, next to a choice " +
+              "of what the Timeline's height measures.",
+          },
+          {
+            target: () => this._moreBtn,
+            title: "More",
+            body:
+              "Export and import live here now, plus an optional free " +
+              "OpenAlex API key, which raises OpenAlex's daily budget for " +
+              "you about tenfold.",
+          },
+        ],
+      },
+      // Future releases: add { since: "<major.minor>", steps: [ … ] } here.
     ];
   }
 
@@ -4822,6 +5665,8 @@ this.GraphView = class {
   _showGuide() {
     if (this._guide) return;
     const ov = this._el("div", "zcm-guide-overlay");
+    // above the details card (30) and notices (40), below coachmarks (80)
+    ov.style.zIndex = "50";
     const g = this._el("div", "zcm-guide");
 
     const head = this._el("div", "zcm-guide-head");
@@ -4873,7 +5718,10 @@ this.GraphView = class {
     sec(
       "The arrows",
       "An arrow points from the citing paper to the cited one, it always " +
-        "points backwards in time, toward the foundations."
+        "points backwards in time, toward the foundations. Hover or click a " +
+        "paper and its links light up: BLUE lines go to the papers it cites " +
+        "(older work it builds on), PINK lines come from the papers citing " +
+        "it (newer work building on it). Everything else fades."
     );
     sec(
       "Clusters & islands",
@@ -4882,8 +5730,9 @@ this.GraphView = class {
         "arranged around the edge. Separate groups form their own islands: a " +
         "pair of papers that only cite each other becomes a little island of " +
         "its own next to the main network, and papers with no citation links " +
-        "at all (often those without a DOI) gather in a tidy block off to the " +
-        "side."
+        "at all (often those without a DOI) gather in a labelled block off " +
+        "to the side. Suggestions (papers you don't own yet) are drawn as " +
+        "open rings, your own papers as filled dots."
     );
     sec(
       "Suggested tab (amber) vs Discover tab (violet): the key difference",
@@ -5010,21 +5859,27 @@ this.GraphView = class {
         "“journalBranding” setting in the Config Editor."
     );
     sec(
-      "Timeline mode",
-      "The Timeline button arranges papers into one column per publication " +
-        "year, oldest on the left, so you can see at a glance what came " +
-        "first. Years with more papers get a wider block, and empty years " +
-        "are skipped, so a busy stretch like 2020-2026 spreads out into " +
-        "readable columns instead of piling up. Papers without a year get " +
-        "their own “undated” column on the far left."
+      "Timeline (the default view)",
+      "The Timeline reads like a chart: left to right is the publication " +
+        "year (oldest on the left), and the HIGHER a paper sits, the more " +
+        "it is cited (worldwide, on a log scale; Display → Timeline height " +
+        "switches to citations from the papers on this map). So the " +
+        "classics sit top-left and fresh work bottom-right. Each year is a " +
+        "column; empty years are skipped (marked ⋯) so a busy stretch like " +
+        "2020-2026 stays readable. Papers without a year get an “undated” " +
+        "column on the far left, papers without citation data a strip " +
+        "under the axis. Network shows the citation islands instead; the " +
+        "map remembers which one you used last."
     );
     sec(
       "Getting around",
       "Scroll to zoom (toward the cursor) · drag the background to pan · " +
-        "drag a dot to pin it (double-click it to release) · click a dot " +
-        "for details, notes and actions · double-click a dot to open it in " +
-        "your library or on doi.org · ⌂ or double-clicking the background " +
-        "fits everything back into view."
+        "in the Network, drag a dot to pin it (switching layouts releases " +
+        "it) · click a dot for details, its links on the map, notes and " +
+        "actions · double-click a dot to open it in your library or on " +
+        "doi.org · ⌂ or double-clicking the background fits everything back " +
+        "into view. Spacing and line thickness are under Display; export, " +
+        "import and the OpenAlex API key under More."
     );
     sec(
       "Where the data comes from",
@@ -5058,7 +5913,7 @@ this.GraphView = class {
 
   async _showInLibrary(node) {
     try {
-      const pane = Zotero.getActiveZoteroPane();
+      const pane = this.win.ZoteroPane || Zotero.getActiveZoteroPane();
       this.win.Zotero_Tabs.select("zotero-pane");
       await pane.selectItem(node.zoteroItemID);
     } catch (e) {
@@ -5070,24 +5925,32 @@ this.GraphView = class {
   async _addDiscovered(node, button) {
     button.disabled = true;
     button.textContent = "Adding…";
-    if (this._detailMsg) this._detailMsg.style.display = "none";
+    const msg = this._detailMsg; // this card's message line, captured now
+    if (msg) msg.style.display = "none";
+    // the import takes a few seconds; the user may select another paper
+    const stillShown = () => !this._destroyed && this.selected === node.key;
     try {
       const item = await this._importByDOI(node.doi, this.ctx.collectionID);
       node.kind = "library";
       node.zoteroItemID = item.id;
+      node.teased = false;
+      node.hidden = false;
+      node.revealed = true;
+      this._activeNodes = null;
+      this._activeEdges = null;
       button.textContent = "Added ✓";
       this._dirty = true;
       // re-render details so it now shows "Show in library" + notes
-      this._renderDetails(node);
+      if (stillShown()) this._renderDetails(node);
     } catch (e) {
       Zotero.debug("[Citation Map] Add by DOI failed: " + e);
       button.disabled = false;
       button.textContent = "Add to Zotero";
-      if (this._detailMsg) {
-        this._detailMsg.textContent =
+      if (msg && stillShown()) {
+        msg.textContent =
           "Couldn't add it automatically. Use “Open DOI”, then add it in " +
           "Zotero.";
-        this._detailMsg.style.display = "block";
+        msg.style.display = "block";
       }
     }
   }
@@ -5095,16 +5958,10 @@ this.GraphView = class {
   // ================================================================ export
 
   async _pickSavePath(suggested, extLabel, ext) {
-    let FilePicker;
-    try {
-      ({ FilePicker } = ChromeUtils.importESModule(
-        "chrome://zotero/content/modules/filePicker.mjs"
-      ));
-    } catch (e) {
-      ({ FilePicker } = ChromeUtils.import(
-        "chrome://zotero/content/modules/filePicker.jsm"
-      ));
-    }
+    // filePicker.mjs is the Zotero 7+ module (ChromeUtils.import is gone)
+    const { FilePicker } = ChromeUtils.importESModule(
+      "chrome://zotero/content/modules/filePicker.mjs"
+    );
     const fp = new FilePicker();
     fp.init(this.win, "Save " + extLabel, fp.modeSave);
     fp.appendFilter(extLabel, "*." + ext);
@@ -5114,10 +5971,30 @@ this.GraphView = class {
     return fp.file;
   }
 
+  /** Run an export, turning any failure into a visible notice. */
+  async _safeExport(fn) {
+    try {
+      await fn();
+    } catch (e) {
+      Zotero.debug("[Citation Map] export failed: " + e + "\n" + (e && e.stack));
+      this._showNotice("Export failed: " + (e && e.message ? e.message : e), "warn");
+    }
+  }
+
   async _exportPNG() {
     const path = await this._pickSavePath("citation-map.png", "PNG image", "png");
     if (!path) return;
-    const blob = await new Promise((res) => this.canvas.toBlob(res, "image/png"));
+    // The map canvas is transparent (the stage paints the background), so
+    // compose onto the map's background, light labels would vanish on a
+    // white image viewer otherwise.
+    const out = this.doc.createElement("canvas");
+    out.width = this.canvas.width;
+    out.height = this.canvas.height;
+    const o = out.getContext("2d");
+    o.fillStyle = this._css("--zcm-bg") || "#0e1424";
+    o.fillRect(0, 0, out.width, out.height);
+    o.drawImage(this.canvas, 0, 0);
+    const blob = await new Promise((res) => out.toBlob(res, "image/png"));
     const buf = new Uint8Array(await blob.arrayBuffer());
     await IOUtils.write(path, buf);
   }
@@ -5148,6 +6025,7 @@ this.GraphView = class {
         oaStatus: n.oaStatus || null,
         via: n.via || null,
         citesCount: n.citesCount || 0,
+        isReview: !!n.isReview,
       })),
       edges: this.graph.edges,
       chains: this.graph.chains,

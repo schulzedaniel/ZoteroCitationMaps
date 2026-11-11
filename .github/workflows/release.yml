@@ -38,10 +38,33 @@ jobs:
       # Everything below only runs for a real version tag (v1.8.1, v2.0.0, …),
       # never for a manual workflow_dispatch run on a branch.
 
+      # The release text is this version's section of CHANGELOG.md (plus a
+      # short install line), so the notes are written once, in the repo.
+      - name: Release notes from CHANGELOG.md
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python3 - > build/RELEASE_NOTES.md <<'PY'
+          import json, re
+          m = json.load(open("addon/manifest.json"))
+          version = m["version"]
+          z = m["applications"]["zotero"]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          sec = re.search(r"^## " + re.escape(version) + r"[ \t]*$(.*?)(?=^## |\Z)", text, re.S | re.M)
+          print(f"**Install or update:** already using Citation Map? Zotero offers this version automatically "
+                f"(Tools → Plugins → ⚙ → Check for Updates). Otherwise download **citation-map-{version}.xpi** "
+                f"below and drag it onto Zotero's **Tools → Plugins** window. "
+                f"Works with Zotero {z['strict_min_version']} to {z['strict_max_version'].replace('.*', '.x')}.")
+          print()
+          print(sec.group(1).strip() if sec else f"See CHANGELOG.md for version {version}.")
+          PY
+          cat build/RELEASE_NOTES.md
+
       - name: Attach XPI to this release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          name: Citation Map ${{ github.ref_name }}
+          body_path: zotero-citation-map/build/RELEASE_NOTES.md
           files: zotero-citation-map/build/*.xpi
           generate_release_notes: true
           make_latest: "true"
@@ -50,6 +73,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           VERSION=$(python3 -c "import json;print(json.load(open('addon/manifest.json'))['version'])")
+          # The supported Zotero range comes from the manifest too, so a new
+          # Zotero major only needs ONE edit (manifest.json) to ship.
+          MIN_ZOTERO=$(python3 -c "import json;print(json.load(open('addon/manifest.json'))['applications']['zotero']['strict_min_version'])")
+          MAX_ZOTERO=$(python3 -c "import json;print(json.load(open('addon/manifest.json'))['applications']['zotero']['strict_max_version'])")
           XPI="build/citation-map-${VERSION}.xpi"
           # Hash the exact file we just attached above, so update_hash always
           # matches what users actually download (same job = same bytes).
@@ -63,14 +90,14 @@ jobs:
                     "version": "${VERSION}",
                     "update_link": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/citation-map-${VERSION}.xpi",
                     "update_hash": "sha256:${HASH}",
-                    "applications": { "zotero": { "strict_min_version": "7.0", "strict_max_version": "9.*" } }
+                    "applications": { "zotero": { "strict_min_version": "${MIN_ZOTERO}", "strict_max_version": "${MAX_ZOTERO}" } }
                   }
                 ]
               }
             }
           }
           EOF
-          echo "Generated update.json for v${VERSION} (sha256:${HASH})"
+          echo "Generated update.json for v${VERSION} (sha256:${HASH}, Zotero ${MIN_ZOTERO} – ${MAX_ZOTERO})"
 
       - name: Publish update.json to the 'release' channel
         if: startsWith(github.ref, 'refs/tags/v')

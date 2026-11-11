@@ -73,6 +73,14 @@ this.GraphBuilder = {
           (item.getField("abstractNote") || ""),
         tags,
       });
+      if (record && oaToKey.has(record.id)) {
+        // The same work twice (duplicate items, or one paper in two
+        // libraries): one node, or its references would count double and
+        // flood Suggested with "cited by 2 of your papers" false hits.
+        const twin = nodes.get(oaToKey.get(record.id));
+        (twin.altItemIDs || (twin.altItemIDs = [])).push(item.id);
+        continue;
+      }
       if (record) {
         const node = this._node(key, "library", record, item.id);
         // The user's own metadata wins: OpenAlex's publication_year is
@@ -171,6 +179,14 @@ this.GraphBuilder = {
             existing.oaStatus = record.oaStatus || null;
             existing.references = record.references || [];
             existing.related = record.related || [];
+            existing.isReview = this.isReviewRecord(record);
+            // step 4 already ran, so wire this paper's own citations now
+            for (const refID of existing.references) {
+              const targetKey = oaToKey.get(refID);
+              if (targetKey && targetKey !== existingKey) {
+                edges.push({ source: existingKey, target: targetKey });
+              }
+            }
           }
           oaToKey.set(oaID, existingKey);
           for (const citer of citers) {
@@ -302,10 +318,11 @@ this.GraphBuilder = {
   // ============================================================ review detection
 
   // Title patterns that mark a review / secondary-literature article. Kept
-  // reasonably specific so a bare "review" (e.g. "peer review process") does
-  // not match, but broad enough to catch the common wordings.
+  // specific: a bare trailing "review" ("Bias in peer review", "Modern code
+  // review"), "state-of-the-art" and "current state" all occur in primary
+  // research titles, so they are deliberately NOT matched.
   REVIEW_TITLE_RE:
-    /\b(systematic|scoping|narrative|literature|umbrella|integrative|rapid|comprehensive|critical|mini|brief|concise)[\s-]+review\b|\bmeta[\s-]?analys(is|es)\b|\breview\s+article\b|:\s*an?\s+([a-z]+\s+){0,3}review\b|\ban?\s+review\s+of\b|\breview\s+of\s+the\s+literature\b|\(review\)|[:\-–—]\s*review\s*$|\breview\s*$|\brecent\s+(advances|progress|developments|insights|trends)\s+in\b|\ban?\s+(overview|survey)\s+of\b|\bcurrent\s+(concepts|status|state|understanding|perspectives)\b|\bstate[\s-]of[\s-]the[\s-]art\b/i,
+    /\b(systematic|scoping|narrative|literature|umbrella|integrative|rapid|comprehensive|critical|mini|brief|concise)[\s-]+review\b|\bmeta[\s-]?analys(is|es)\b|\breview\s+article\b|:\s*an?\s+([a-z]+\s+){0,3}review\b|\ban?\s+review\s+of\b|\breview\s+of\s+the\s+literature\b|\(review\)|[:\-–—]\s*review\s*$|\brecent\s+(advances|progress|developments|insights|trends)\s+in\b|\ban?\s+(overview|survey)\s+of\b|\bcurrent\s+(concepts|perspectives)\s+(in|on|of)\b/i,
 
   // Venues that are review journals/series (plural "Reviews" is a strong,
   // precise signal; singular "Review of X" is deliberately NOT matched, as
@@ -619,12 +636,18 @@ this.GraphBuilder = {
     }
 
     // ---- 2. topic search -------------------------------------------------
-    if (opts.topics !== false && profile.topics.length) {
+    // an explicit empty topic list (every topic unticked) means "no topic
+    // search", not "use the defaults"
+    const topicsChosen = Array.isArray(opts.topicIDs);
+    if (
+      opts.topics !== false &&
+      profile.topics.length &&
+      !(topicsChosen && !opts.topicIDs.length)
+    ) {
       prog("Searching your topics", 0, 1);
-      const ids =
-        opts.topicIDs && opts.topicIDs.length
-          ? opts.topicIDs
-          : profile.topics.slice(0, 3).map((t) => t.id);
+      const ids = topicsChosen
+        ? opts.topicIDs
+        : profile.topics.slice(0, 3).map((t) => t.id);
       const byTopic = await DS.fetchWorksByTopics(ids, {
         fromYear: opts.fromYear,
         perPage: 50,
@@ -721,12 +744,14 @@ this.GraphBuilder = {
 
     const longestFrom = (key) => {
       if (memo.has(key)) return memo.get(key);
-      if (inStack.has(key)) return [key]; // cycle guard
+      // cycle guard (mutual citations exist in OpenAlex): a paper already
+      // on the current path must not appear in it twice
+      if (inStack.has(key)) return [];
       inStack.add(key);
       let best = [key];
       for (const next of adj.get(key) || []) {
         const sub = longestFrom(next);
-        if (sub.length + 1 > best.length) best = [key, ...sub];
+        if (sub.length && sub.length + 1 > best.length) best = [key, ...sub];
       }
       inStack.delete(key);
       memo.set(key, best);
@@ -745,8 +770,8 @@ this.GraphBuilder = {
     // Drop chains fully contained in a longer chain.
     const kept = [];
     for (const c of chains) {
-      const sig = c.join(">");
-      if (!kept.some((k) => k.join(">").includes(sig))) kept.push(c);
+      const sig = ">" + c.join(">") + ">";
+      if (!kept.some((k) => (">" + k.join(">") + ">").includes(sig))) kept.push(c);
       if (kept.length >= 10) break;
     }
     return kept;

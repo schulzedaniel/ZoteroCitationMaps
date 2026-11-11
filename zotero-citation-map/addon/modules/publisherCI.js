@@ -459,27 +459,25 @@ this.PublisherCI = (function () {
     if (!venue || typeof venue !== "string") return NEUTRAL;
     const key = venue.trim();
     if (!key) return NEUTRAL;
-    if (_cache.has(key)) return _cache.get(key);
 
-    // Respect a user opt-out; when off, every venue is neutral.
-    let enabled = true;
+    // Respect a user opt-out; when off, every venue is neutral. Checked
+    // BEFORE the memo, so flipping the pref takes effect without a restart.
     try {
       const pref = Zotero.Prefs.get(
         "extensions.citation-map.journalBranding",
         true
       );
-      if (pref === false) enabled = false;
+      if (pref === false) return NEUTRAL;
     } catch (e) {
       /* Zotero.Prefs unavailable (tests) → default on */
     }
+    if (_cache.has(key)) return _cache.get(key);
 
     let resolved = NEUTRAL;
-    if (enabled) {
-      for (const fam of FAMILIES) {
-        if (fam.patterns.some((re) => re.test(key))) {
-          resolved = fam.style;
-          break;
-        }
+    for (const fam of FAMILIES) {
+      if (fam.patterns.some((re) => re.test(key))) {
+        resolved = fam.style;
+        break;
       }
     }
     _cache.set(key, resolved);

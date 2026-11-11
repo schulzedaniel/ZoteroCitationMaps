@@ -11,11 +11,11 @@
 
 var CitationMap; // namespace object populated by the loaded modules
 
-// Build marker: the manifest version stays 1.9.0 across dev builds, so this
+// Build marker: the manifest version stays the same across dev builds, so this
 // distinct string is how we can confirm (in Debug Output and in the map's
 // status bar) that the CURRENTLY RUNNING code is the latest build and not a
 // stale copy Zotero kept from an earlier same-version install.
-var CITMAP_BUILD = "2026-08-03-tour-reviews";
+var CITMAP_BUILD = "2026-11-08-zotero10-timeline";
 
 function log(msg) {
   Zotero.debug("[Citation Map] " + msg);

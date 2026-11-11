@@ -7,8 +7,18 @@
    (or gear menu → *Install Plugin From File…*).
 3. Select a collection → **Tools → Show Citation Map**.
 
-Compatible with Zotero 7.0 through 9.x (`strict_max_version: "9.*"` in
-`addon/manifest.json` — bump this when Zotero 10 arrives and you've tested).
+Compatible with Zotero 7.0 through 10.x (`strict_max_version: "10.*"` in
+`addon/manifest.json`).
+
+### When a new Zotero major version arrives
+
+1. Read Zotero's "Zotero N for Developers" page for removed/changed APIs
+   (Zotero 10, for example, made `ZoteroPane.getSelectedCollection()` and
+   `getSelectedLibraryID()` throw once several collections are selected;
+   `citationMap.js` feature-detects the plural replacements).
+2. Test, then bump `strict_max_version` in `addon/manifest.json` only. The
+   release workflow copies the manifest's min/max range into the published
+   `update.json`, so the new release is offered to users of the new Zotero.
 
 ## Running from source (developers)
 

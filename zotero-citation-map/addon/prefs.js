@@ -31,6 +31,15 @@ pref("extensions.citation-map.guideShown", false);
 // reopens it anytime).
 pref("extensions.citation-map.tourShown", false);
 
+// Which layout the map opens in, remembered from the toolbar toggle:
+// "timeline" (x = publication year, height = citations) or "force" (the
+// citation-cluster network).
+pref("extensions.citation-map.layoutMode", "timeline");
+
+// What a paper's height means in the Timeline: "global" (citations
+// worldwide, log scale) or "local" (how many papers on this map cite it).
+pref("extensions.citation-map.timelineMetric", "global");
+
 // Distance between papers on the map, in percent (the "Spacing" slider).
 pref("extensions.citation-map.nodeSpacing", 100);
 
@@ -50,8 +59,14 @@ pref("extensions.citation-map.suggestMinCiters", 2);
 // How many suggestions the "Top" map mode shows.
 pref("extensions.citation-map.suggestTopCount", 4);
 
-// Polite-pool contact for OpenAlex requests (recommended by OpenAlex).
-// Set to your e-mail address in Config Editor for faster, more reliable API access.
+// Optional free OpenAlex API key (https://openalex.org/settings/api). Without
+// one, OpenAlex allows a small daily budget per network; a key raises it about
+// tenfold. Sent only to api.openalex.org, as an Authorization header. Can be
+// set from the map (More ▾ → OpenAlex API key…).
+pref("extensions.citation-map.apiKey", "");
+
+// Legacy OpenAlex "polite pool" contact address. OpenAlex now uses API keys
+// instead; this is only sent if you set it.
 pref("extensions.citation-map.mailto", "");
 
 // Tint papers with their journal's publisher corporate identity (brand colour
