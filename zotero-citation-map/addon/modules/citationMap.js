@@ -27,6 +27,18 @@ this.Main = {
   async startup() {
     await this._ns.DataSource.initCache();
     this._scrubSession();
+    // Zotero Settings ▸ Citation Map: the Appearance control, for people who
+    // look there first (the same setting lives in the map's Display popover).
+    try {
+      Zotero.PreferencePanes.register({
+        pluginID: this._ns.id,
+        src: this._ns.rootURI + "content/preferences.xhtml",
+        label: "Citation Map",
+        image: this._ns.rootURI + "content/icons/citation-map.svg",
+      });
+    } catch (e) {
+      Zotero.debug("[Citation Map] settings pane not registered: " + e);
+    }
   },
 
   shutdown() {
@@ -109,20 +121,25 @@ this.Main = {
     const doc = win.document;
     const created = [];
 
-    // Stylesheet for the graph view (scoped by .zcm- prefix). A cache-busting
-    // query (version + load time) forces Zotero to load the CURRENT css and
-    // never a stale cached copy from a previous install at the same URL, which
-    // otherwise made cosmetic changes appear not to take effect.
-    const link = doc.createElement("link");
-    link.rel = "stylesheet";
-    link.href =
-      this._ns.rootURI +
-      "content/graph.css?v=" +
-      encodeURIComponent(this._ns.version || "0") +
-      "&t=" +
-      Date.now();
-    doc.documentElement.appendChild(link);
-    created.push(link);
+    // Stylesheets for the map view, all scoped under .zcm-root. Load order:
+    // design tokens → components → graph.css (plugin-specific parts). A
+    // cache-busting query (version + load time) forces Zotero to load the
+    // CURRENT css and never a stale cached copy from a previous install at
+    // the same URL, which otherwise made cosmetic changes appear not to
+    // take effect.
+    const bust =
+      "?v=" + encodeURIComponent(this._ns.version || "0") + "&t=" + Date.now();
+    for (const sheet of [
+      "content/styles/tokens.css",
+      "content/styles/components.css",
+      "content/graph.css",
+    ]) {
+      const link = doc.createElement("link");
+      link.rel = "stylesheet";
+      link.href = this._ns.rootURI + sheet + bust;
+      doc.documentElement.appendChild(link);
+      created.push(link);
+    }
 
     // Tools menu → Show Citation Map
     const toolsPopup = doc.getElementById("menu_ToolsPopup");
@@ -388,13 +405,14 @@ this.Main = {
 
       const overlay = doc.createElement("div");
       overlay.className = "zcm-root zcm-scope-overlay";
+      this._ns.MapTheme.stamp(overlay, win);
       const card = doc.createElement("div");
       card.className = "zcm-scope-card";
 
       const head = doc.createElement("div");
       head.className = "zcm-scope-head";
       const htitle = doc.createElement("div");
-      htitle.className = "zcm-title-name";
+      htitle.className = "zcm-dialog-title";
       htitle.textContent = "Which subcollections to include?";
       head.appendChild(htitle);
       card.appendChild(head);
@@ -411,10 +429,10 @@ this.Main = {
       const tools = doc.createElement("div");
       tools.className = "zcm-scope-tools";
       const btnAll = doc.createElement("button");
-      btnAll.className = "zcm-btn";
+      btnAll.className = "zcm-btn zcm-btn--secondary";
       btnAll.textContent = "Select all";
       const btnNone = doc.createElement("button");
-      btnNone.className = "zcm-btn";
+      btnNone.className = "zcm-btn zcm-btn--secondary";
       btnNone.textContent = "Only this collection";
       tools.appendChild(btnAll);
       tools.appendChild(btnNone);
@@ -484,13 +502,13 @@ this.Main = {
       foot.className = "zcm-scope-foot";
       if (!initial) {
         const cancel = doc.createElement("button");
-        cancel.className = "zcm-btn";
+        cancel.className = "zcm-btn zcm-btn--secondary";
         cancel.textContent = "Cancel";
         cancel.addEventListener("click", () => finish(null));
         foot.appendChild(cancel);
       }
       const primary = doc.createElement("button");
-      primary.className = "zcm-btn zcm-btn-primary";
+      primary.className = "zcm-btn zcm-btn--primary";
       primary.textContent = initial ? "Show map" : "Update map";
       primary.addEventListener("click", () => finish(computeScope()));
       foot.appendChild(primary);
@@ -847,57 +865,93 @@ this.Main = {
     }
   },
 
-  /** The in-tab progress screen; returns update/remove/fail helpers. */
+  /**
+   * The in-tab build screen (centred, max 360px): step label and count, a
+   * 4px progress bar, a hint line. Returns update/remove/fail helpers.
+   */
   _progressScreen(doc, container) {
-    const prog = doc.createElement("div");
-    prog.className = "zcm-root zcm-progress";
-    const inner = doc.createElement("div");
-    inner.className = "zcm-progress-inner";
-    const h = doc.createElement("div");
-    h.className = "zcm-title-name";
-    h.textContent = "Citation Map";
-    const label = doc.createElement("div");
-    label.className = "zcm-progress-label";
-    label.textContent = "Preparing…";
-    const barOuter = doc.createElement("div");
-    barOuter.className = "zcm-progress-bar";
-    const barInner = doc.createElement("div");
-    barInner.className = "zcm-progress-fill";
+    const el = (tag, cls, text) => {
+      const e = doc.createElement(tag);
+      if (cls) e.className = cls;
+      if (text != null) e.textContent = text;
+      return e;
+    };
+    const prog = el("div", "zcm-root zcm-buildscreen");
+    this._ns.MapTheme.stamp(prog, doc.defaultView);
+    const inner = el("div", "zcm-build");
+    const brand = el("div", "zcm-brand");
+    brand.appendChild(this._ns.Icons.logo(doc, "Citation Map"));
+    brand.appendChild(el("span", "zcm-wordmark", "Citation Map"));
+    const step = el("div", "zcm-build-step");
+    const label = el("span", "zcm-build-label", "Preparing…");
+    const count = el("span", "zcm-num", "");
+    step.appendChild(label);
+    step.appendChild(count);
+    const barOuter = el("div", "zcm-progress");
+    barOuter.setAttribute("role", "progressbar");
+    barOuter.setAttribute("aria-valuemin", "0");
+    barOuter.setAttribute("aria-valuemax", "100");
+    const barInner = el("span");
+    barInner.style.width = "0%";
     barOuter.appendChild(barInner);
-    const hint = doc.createElement("div");
-    hint.className = "zcm-progress-hint";
-    hint.textContent =
+    const hint = el(
+      "div",
+      "zcm-help",
       "Reference lists come from OpenAlex and are cached locally — " +
-      "the next run of this collection will be nearly instant.";
-    const warn = doc.createElement("div");
-    warn.className = "zcm-progress-warn";
-    inner.appendChild(h);
-    inner.appendChild(label);
+        "the next run of this collection will be nearly instant."
+    );
+    const warn = el("div", "zcm-build-warn");
+    warn.style.display = "none";
+    const live = el("div", "zcm-sr-only");
+    live.setAttribute("aria-live", "polite");
+    inner.appendChild(brand);
+    inner.appendChild(step);
     inner.appendChild(barOuter);
     inner.appendChild(warn);
     inner.appendChild(hint);
+    inner.appendChild(live);
+    // skeleton rows hint at the content to come
+    const skel = el("div", "zcm-build-skel");
+    for (const w of ["80%", "55%", "68%"]) {
+      const row = el("div", "zcm-skel");
+      row.style.width = w;
+      skel.appendChild(row);
+    }
+    inner.appendChild(skel);
     prog.appendChild(inner);
     container.appendChild(prog);
 
+    let lastQuarter = -1;
     return {
       onProgress: (phase, done, total) => {
-        label.textContent = `${phase} — ${done} / ${total}`;
-        barInner.style.width =
-          (total ? Math.round((done / total) * 100) : 0) + "%";
+        label.textContent = phase;
+        count.textContent = total ? `${done} of ${total}` : "";
+        const pct = total ? Math.round((done / total) * 100) : 0;
+        barInner.style.width = pct + "%";
+        barOuter.setAttribute("aria-valuenow", String(pct));
+        // screen readers: a milestone every 25%
+        const q = Math.floor(pct / 25);
+        if (q !== lastQuarter) {
+          lastQuarter = q;
+          live.textContent = `${phase}: ${pct}%`;
+        }
       },
       warn: (msg) => {
         warn.textContent = msg || "";
-        warn.style.display = msg ? "block" : "none";
+        warn.style.display = msg ? "" : "none";
       },
       remove: () => {
         if (prog.parentNode) prog.parentNode.removeChild(prog);
       },
       fail: (msg) => {
         label.textContent = msg;
+        label.classList.add("zcm-error-text");
+        count.textContent = "";
         barInner.style.width = "0%";
+        skel.style.display = "none";
       },
       /** Extra content under the message (e.g. the API-key form). */
-      append: (el) => inner.appendChild(el),
+      append: (el2) => inner.appendChild(el2),
     };
   },
 
@@ -1156,13 +1210,14 @@ this.Main = {
 
       const overlay = doc.createElement("div");
       overlay.className = "zcm-root zcm-scope-overlay";
+      this._ns.MapTheme.stamp(overlay, win);
       const card = doc.createElement("div");
       card.className = "zcm-scope-card";
 
       const head = doc.createElement("div");
       head.className = "zcm-scope-head";
       const htitle = doc.createElement("div");
-      htitle.className = "zcm-title-name";
+      htitle.className = "zcm-dialog-title";
       htitle.textContent = "Import map";
       head.appendChild(htitle);
       card.appendChild(head);
@@ -1215,10 +1270,9 @@ this.Main = {
         row.className =
           "zcm-scope-row" + (r.type === "library" ? " zcm-scope-lib" : "");
         row.style.paddingLeft = 10 + r.depth * 18 + "px";
-        const icon = doc.createElement("span");
-        icon.className = "zcm-scope-icon";
-        icon.textContent = r.type === "library" ? "📚" : "📁";
-        row.appendChild(icon);
+        row.appendChild(
+          this._ns.Icons.make(doc, r.type === "library" ? "books" : "folder")
+        );
         const nm = doc.createElement("span");
         nm.className = "zcm-scope-name";
         nm.textContent =
@@ -1250,11 +1304,11 @@ this.Main = {
       const foot = doc.createElement("div");
       foot.className = "zcm-scope-foot";
       const viewBtn = doc.createElement("button");
-      viewBtn.className = "zcm-btn";
+      viewBtn.className = "zcm-btn zcm-btn--secondary";
       viewBtn.textContent = "Just view the map";
       viewBtn.addEventListener("click", () => finish({ action: "view" }));
       const createBtn = doc.createElement("button");
-      createBtn.className = "zcm-btn zcm-btn-primary";
+      createBtn.className = "zcm-btn zcm-btn--primary";
       createBtn.textContent = "Create collection & import";
       createBtn.addEventListener("click", () =>
         finish({

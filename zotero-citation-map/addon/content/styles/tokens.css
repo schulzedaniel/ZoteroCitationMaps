@@ -1,0 +1,227 @@
+/* =====================================================================
+   Citation Map for Zotero · design tokens v2.0 ("Clear")
+   Scope: everything lives under .zcm-root so Zotero's own UI is untouched.
+   Theme: JS resolves the user's choice (auto | light | dark) and writes
+          data-theme="light" | "dark" on .zcm-root. CSS never guesses.
+   Load order: tokens.css → components.css → (legacy graph.css removed)
+   ===================================================================== */
+
+/* ---------- 1. Typeface (bundled, SIL OFL 1.1) ----------------------- */
+/* Inter 4.x variable, subset to Latin, Latin Extended-A, Greek, General
+   Punctuation, Arrows, Math Operators (≈150 KB woff2). Family is renamed
+   "ZCM Inter" so a user-installed Inter can never shadow or clash.     */
+@font-face {
+  font-family: "ZCM Inter";
+  src: url("fonts/InterVariable-subset.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---------- 2. Theme-independent tokens ------------------------------ */
+.zcm-root {
+  /* Type families */
+  --zcm-font: "ZCM Inter", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --zcm-font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; /* API key + JSON only */
+
+  /* Type scale: six steps, three weights (400 / 500 / 600) */
+  --zcm-type-2xs: 500 11px/14px var(--zcm-font);   /* field labels, axis ticks, map labels      */
+  --zcm-type-xs:  400 12px/16px var(--zcm-font);   /* metadata, sublines, status bar             */
+  --zcm-type-sm:  400 13px/18px var(--zcm-font);   /* BASE: body, buttons, inputs, list titles   */
+  --zcm-type-md:  600 15px/20px var(--zcm-font);   /* panel and card titles, toolbar product name*/
+  --zcm-type-lg:  600 18px/24px var(--zcm-font);   /* inspector paper title, dialog titles       */
+  --zcm-type-xl:  600 24px/30px var(--zcm-font);   /* empty-state and build-screen headline      */
+  --zcm-tracking-tight: -0.011em;                  /* apply to md and up                         */
+  --zcm-tracking-xl: -0.019em;
+
+  /* Space: 4 px grid */
+  --zcm-space-0: 2px;
+  --zcm-space-1: 4px;
+  --zcm-space-2: 8px;
+  --zcm-space-3: 12px;
+  --zcm-space-4: 16px;
+  --zcm-space-5: 20px;
+  --zcm-space-6: 24px;
+  --zcm-space-8: 32px;
+
+  /* Radius */
+  --zcm-radius-xs: 4px;    /* focus-ring inner, tiny swatches        */
+  --zcm-radius-sm: 6px;    /* buttons, inputs, segmented, list rows  */
+  --zcm-radius-md: 10px;   /* cards, popovers, legend, tooltip       */
+  --zcm-radius-lg: 14px;   /* dialogs, inspector sheet on narrow     */
+  --zcm-radius-full: 999px;
+
+  /* Sizes */
+  --zcm-control-sm: 24px;  /* mini buttons in rows, chips            */
+  --zcm-control-md: 28px;  /* default buttons, inputs, segmented     */
+  --zcm-control-lg: 32px;  /* map controls                           */
+  --zcm-icon-sm: 14px;
+  --zcm-icon-md: 16px;
+  --zcm-toolbar-h: 48px;
+  --zcm-filterbar-h: 36px;
+  --zcm-statusbar-h: 28px;
+  --zcm-sidebar-w: 340px;  /* min 280, max 520, remembered per user  */
+
+  /* Motion */
+  --zcm-dur-fast: 120ms;   /* hover, press                           */
+  --zcm-dur-base: 180ms;   /* popovers, tabs, inspector slide        */
+  --zcm-dur-slow: 260ms;   /* dialogs, coachmark glide               */
+  --zcm-ease: cubic-bezier(0.2, 0, 0, 1);
+  --zcm-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  /* Z-order (unchanged meaning, renamed) */
+  --zcm-z-tooltip: 5;
+  --zcm-z-mapcontrols: 6;
+  --zcm-z-legend: 7;
+  --zcm-z-notice: 40;
+  --zcm-z-popover: 60;
+  --zcm-z-dialog: 70;
+  --zcm-z-coachmark: 80;
+}
+
+/* ---------- 3. Light theme (default) --------------------------------- */
+.zcm-root,
+.zcm-root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Neutrals: cool, slightly blue-biased greys */
+  --zcm-canvas:        #FAFBFC;  /* map background                      */
+  --zcm-surface:       #FFFFFF;  /* toolbar, sidebar, cards, popovers   */
+  --zcm-surface-2:     #F4F5F7;  /* hovered rows, wells, segmented track*/
+  --zcm-raised:        #FFFFFF;  /* active segment, switch thumb        */
+  --zcm-sunken:        #EDEFF2;  /* input fill, progress track          */
+  --zcm-line:          #E2E5EA;  /* dividers, card borders              */
+  --zcm-line-strong:   #C9CED6;  /* resizer grip, skeletons             */
+  --zcm-border-control:#8A929E;  /* input/checkbox outlines (≥3:1)      */
+  --zcm-text:          #14171C;  /* 17.9:1 on surface                   */
+  --zcm-text-2:        #545B67;  /* 6.8:1  secondary                    */
+  --zcm-text-3:        #6A717D;  /* 4.9:1  tertiary, still AA           */
+
+  /* Interaction: monochrome "ink". Colour is reserved for meaning.  */
+  --zcm-ink:           #14171C;  /* primary buttons, active tab, toggles*/
+  --zcm-on-ink:        #FFFFFF;
+  --zcm-focus:         #14171C;  /* 2px ring, 2px offset                */
+  --zcm-state-hover:   rgba(20, 23, 28, 0.05);
+  --zcm-state-press:   rgba(20, 23, 28, 0.09);
+  --zcm-state-select:  rgba(20, 23, 28, 0.07);
+  --zcm-scrim:         rgba(20, 23, 28, 0.32);
+
+  /* Feature colours: one hue per feature, everywhere (UI + map).
+     -mark  = dots, rings, lines, icons    (≥3:1 on canvas)
+     -fg    = text in that colour          (≥4.5:1 on surface)
+     -soft  = tinted fills (badges, rows)  (computed below)           */
+  --zcm-f-library:       #2B303A;
+  --zcm-f-suggested:     #E8590C;  --zcm-f-suggested-fg: #C2410C;
+  --zcm-f-discover:      #7C3AED;  --zcm-f-discover-fg:  #6D28D9;
+  --zcm-f-chain:         #0D9488;  --zcm-f-chain-fg:     #0F766E;
+  --zcm-f-cites:         #2563EB;  --zcm-f-cites-fg:     #1D4ED8;
+  --zcm-f-citedby:       #DB2777;  --zcm-f-citedby-fg:   #BE185D;
+  --zcm-f-new:           #5A9A0A;  --zcm-f-new-fg:       #4D7C0F;
+  --zcm-f-nodata:        #8A919C;
+  --zcm-soft-mix: 12%;
+
+  /* Status (never used on the map) */
+  --zcm-danger:  #DC2626;  --zcm-danger-fg:  #B91C1C;
+  --zcm-caution: #CA8A04;  --zcm-caution-fg: #A16207;
+
+  /* Map chrome */
+  --zcm-map-band:  rgba(20, 23, 28, 0.025);
+  --zcm-map-grid:  #E6E9ED;
+  --zcm-map-edge:  #8A929E;   /* drawn at 0.25–0.45 alpha by density */
+  --zcm-map-dim:   0.18;      /* opacity of unfocused marks          */
+
+  /* Notes keep a paper feel in both themes */
+  --zcm-note-bg:   #FFFDF7;
+  --zcm-note-line: #EFE8D6;
+  --zcm-note-text: #2A2722;
+
+  /* Elevation */
+  --zcm-shadow-1: 0 1px 2px rgba(20,23,28,.06), 0 0 0 1px rgba(20,23,28,.04);
+  --zcm-shadow-2: 0 4px 14px rgba(20,23,28,.08), 0 1px 3px rgba(20,23,28,.06), 0 0 0 1px rgba(20,23,28,.05);
+  --zcm-shadow-3: 0 16px 40px rgba(20,23,28,.16), 0 2px 8px rgba(20,23,28,.08), 0 0 0 1px rgba(20,23,28,.05);
+}
+
+/* ---------- 4. Dark theme -------------------------------------------- */
+.zcm-root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --zcm-canvas:        #111316;
+  --zcm-surface:       #191C20;
+  --zcm-surface-2:     #22262B;
+  --zcm-raised:        #30353C;
+  --zcm-sunken:        #0D0F11;
+  --zcm-line:          #2C3036;
+  --zcm-line-strong:   #3C424A;
+  --zcm-border-control:#6B737F;
+  --zcm-text:          #EDEEF0;
+  --zcm-text-2:        #A9AFB8;
+  --zcm-text-3:        #8E95A0;
+
+  --zcm-ink:           #EDEEF0;
+  --zcm-on-ink:        #111316;
+  --zcm-focus:         #EDEEF0;
+  --zcm-state-hover:   rgba(237, 238, 240, 0.06);
+  --zcm-state-press:   rgba(237, 238, 240, 0.11);
+  --zcm-state-select:  rgba(237, 238, 240, 0.08);
+  --zcm-scrim:         rgba(0, 0, 0, 0.55);
+
+  --zcm-f-library:       #ECE8DD;
+  --zcm-f-suggested:     #FF8A3D;  --zcm-f-suggested-fg: #FF9A57;
+  --zcm-f-discover:      #A78BFA;  --zcm-f-discover-fg:  #B4A0FB;
+  --zcm-f-chain:         #2DD4BF;  --zcm-f-chain-fg:     #2DD4BF;
+  --zcm-f-cites:         #60A5FA;  --zcm-f-cites-fg:     #7DB5FB;
+  --zcm-f-citedby:       #F472B6;  --zcm-f-citedby-fg:   #F68AC4;
+  --zcm-f-new:           #A3E635;  --zcm-f-new-fg:       #A3E635;
+  --zcm-f-nodata:        #6B727D;
+  --zcm-soft-mix: 18%;
+
+  --zcm-danger:  #F87171;  --zcm-danger-fg:  #F87171;
+  --zcm-caution: #FACC15;  --zcm-caution-fg: #FACC15;
+
+  --zcm-map-band:  rgba(255, 255, 255, 0.025);
+  --zcm-map-grid:  #23272C;
+  --zcm-map-edge:  #6B737F;
+  --zcm-map-dim:   0.22;
+
+  --zcm-note-bg:   #24221E;
+  --zcm-note-line: #38342C;
+  --zcm-note-text: #E9E4D6;
+
+  --zcm-shadow-1: 0 1px 2px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.04);
+  --zcm-shadow-2: 0 6px 18px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.06);
+  --zcm-shadow-3: 0 18px 44px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.07);
+}
+
+/* ---------- 5. Derived tokens (resolve per theme automatically) ------ */
+.zcm-root {
+  --zcm-f-suggested-soft: color-mix(in srgb, var(--zcm-f-suggested) var(--zcm-soft-mix), transparent);
+  --zcm-f-discover-soft:  color-mix(in srgb, var(--zcm-f-discover)  var(--zcm-soft-mix), transparent);
+  --zcm-f-chain-soft:     color-mix(in srgb, var(--zcm-f-chain)     var(--zcm-soft-mix), transparent);
+  --zcm-f-cites-soft:     color-mix(in srgb, var(--zcm-f-cites)     var(--zcm-soft-mix), transparent);
+  --zcm-f-citedby-soft:   color-mix(in srgb, var(--zcm-f-citedby)   var(--zcm-soft-mix), transparent);
+  --zcm-f-new-soft:       color-mix(in srgb, var(--zcm-f-new)       var(--zcm-soft-mix), transparent);
+  --zcm-danger-soft:      color-mix(in srgb, var(--zcm-danger)      var(--zcm-soft-mix), transparent);
+  --zcm-caution-soft:     color-mix(in srgb, var(--zcm-caution)     var(--zcm-soft-mix), transparent);
+
+  font: var(--zcm-type-sm);
+  color: var(--zcm-text);
+  background: var(--zcm-canvas);
+  font-optical-sizing: auto;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Numbers that line up (years, counts, badges, stats) */
+.zcm-root .zcm-num { font-variant-numeric: tabular-nums; }
+
+/* ---------- 6. Accessibility hooks ----------------------------------- */
+.zcm-root :focus-visible {
+  outline: 2px solid var(--zcm-focus);
+  outline-offset: 2px;
+  border-radius: var(--zcm-radius-xs);
+}
+@media (prefers-reduced-motion: reduce) {
+  .zcm-root { --zcm-dur-fast: 0ms; --zcm-dur-base: 0ms; --zcm-dur-slow: 0ms; }
+}
+@media (forced-colors: active) {
+  .zcm-root { --zcm-ink: ButtonText; --zcm-on-ink: ButtonFace; --zcm-focus: Highlight; --zcm-line: CanvasText; }
+}

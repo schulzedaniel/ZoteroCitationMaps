@@ -69,9 +69,9 @@ pref("extensions.citation-map.apiKey", "");
 // instead; this is only sent if you set it.
 pref("extensions.citation-map.mailto", "");
 
-// Tint papers with their journal's publisher corporate identity (brand colour
-// + logo-style font for the journal name). Set false for the neutral house
-// style everywhere. See modules/publisherCI.js.
+// Recognise a paper's publisher from its journal name (used by Display ▸
+// Color the dots by ▸ Journal, and the colour square next to journal names).
+// See modules/publisherCI.js.
 pref("extensions.citation-map.journalBranding", true);
 
 // What the dot colors encode: "kind" (the neutral default — library /
@@ -80,9 +80,9 @@ pref("extensions.citation-map.journalBranding", true);
 // (citation cluster) or "oa" (open-access status).
 pref("extensions.citation-map.colorMode", "kind");
 
-// Sidebar width in px and whether it starts collapsed (both adjustable from
-// the map: drag the divider, click the collapse chevron).
-pref("extensions.citation-map.sidebarWidth", 320);
+// Sidebar width in px (280–520) and whether it starts hidden (both adjustable
+// from the map: drag the divider; More ▸ Hide sidebar or ⌘\ / Ctrl+\).
+pref("extensions.citation-map.sidebarWidth", 340);
 pref("extensions.citation-map.sidebarCollapsed", false);
 
 // Remembered Discover time filter: "any", "2y", "5y", "10y", or a 4-digit
@@ -101,7 +101,7 @@ pref("extensions.citation-map.couplingMinShared", 3);
 pref("extensions.citation-map.lastSeenVersion", "");
 
 // Hide review / secondary-literature articles everywhere (map, suggestions,
-// Discover results, My papers). Toggled from the toolbar.
+// Discover results, Mine). Toggled from Filter ▸ Hide reviews.
 pref("extensions.citation-map.hideReviews", false);
 
 // Discover search: which sources are enabled by default.
@@ -112,3 +112,13 @@ pref("extensions.citation-map.discoverRelated", true);
 // Ask for confirmation before mapping more than this many items, and refuse
 // gently above 4x this (very large maps can make Zotero unresponsive).
 pref("extensions.citation-map.warnItemCount", 400);
+
+// Appearance of the map: "auto" (follow Zotero's colour scheme, the default),
+// "light" or "dark". Set from Display ▸ Appearance or Zotero's Settings ▸
+// Citation Map.
+pref("extensions.citation-map.appearance", "auto");
+
+// What scrolling over the map does: "auto" (a trackpad's two-finger slide
+// moves the map and a pinch zooms; a mouse wheel zooms), "zoom" (scrolling
+// always zooms) or "pan" (scrolling always moves the map). Display ▸ Scrolling.
+pref("extensions.citation-map.scrollGesture", "auto");

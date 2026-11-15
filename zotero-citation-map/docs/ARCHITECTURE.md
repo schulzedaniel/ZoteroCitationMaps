@@ -11,12 +11,18 @@ addon/
 ├── prefs.js                 Default preferences
 ├── locale/en-US/*.ftl       Fluent strings
 ├── content/
-│   ├── graph.css            All UI styles (scoped with .zcm- prefix)
-│   └── icons/               Plugin icons
+│   ├── styles/tokens.css    Design tokens (colour, type, space; light + dark)
+│   ├── styles/components.css Shared components built only from tokens
+│   ├── styles/fonts/        Bundled Inter subset ("ZCM Inter") + OFL.txt
+│   ├── graph.css            Plugin-specific styles (scoped under .zcm-root)
+│   ├── preferences.xhtml    Zotero Settings ▸ Citation Map (Appearance)
+│   └── icons/               Toolbar + add-on icons
 └── modules/                 Loaded into one shared namespace object
     ├── dataSource.js        OpenAlex client + on-disk cache
     ├── publisherCI.js       Journal → publisher brand-identity lookup
     ├── graphBuilder.js      Pure graph logic (edges, discovery, chains)
+    ├── mapTheme.js          Canvas palette (mirrors tokens.css) + theme resolution
+    ├── icons.js             Pictogram set (inline SVG)
     ├── graphView.js         Canvas renderer + sidebar + interactions
     └── citationMap.js       Controller: menus, tabs, pipeline, errors
 ```
@@ -160,3 +166,16 @@ removed on shutdown (a hard requirement for bootstrapped plugins).
 - **Localization**: add `addon/locale/<lang>/citation-map.ftl`; menu labels
   are the only strings currently hard-coded in English (see
   `citationMap.js`) and can be switched to Fluent IDs.
+
+## Design system (v2.0 "Clear")
+
+Every colour, size and font is a token in `content/styles/tokens.css`,
+scoped under `.zcm-root`; `data-theme="light" | "dark"` on that element
+switches them. JS resolves the Appearance pref (`auto` follows Zotero's
+`prefers-color-scheme`) via `MapTheme.applyTheme` and never lets CSS guess.
+The canvas cannot read CSS variables cheaply, so `modules/mapTheme.js`
+mirrors the token values in `MAP_THEME`: change both together. Rule of
+thumb: no raw hex colours outside those two files. Paper details live in
+the sidebar inspector (`_buildInspector`, `_renderDetails`), the legend is
+a footer strip (`_renderLegend`), and the responsive steps are one class on
+the root (`_applyResponsive`).

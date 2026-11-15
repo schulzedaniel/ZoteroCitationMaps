@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!-- Zotero Settings ▸ Citation Map. Loaded as a fragment by Zotero's
+     preferences window; `preference` attributes bind controls to prefs. -->
+<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      xmlns:html="http://www.w3.org/1999/xhtml">
+  <groupbox>
+    <label><html:h2>Appearance</html:h2></label>
+    <hbox align="center">
+      <label value="Color scheme of the map:"/>
+      <radiogroup orient="horizontal"
+                  preference="extensions.citation-map.appearance">
+        <radio value="auto" label="Auto"/>
+        <radio value="light" label="Light"/>
+        <radio value="dark" label="Dark"/>
+      </radiogroup>
+    </hbox>
+    <description>Auto follows Zotero's own color scheme (General ▸ Appearance and Language). Light and Dark pin the map regardless of Zotero. The same setting is in the map under Display ▸ Appearance; changes apply immediately to open maps.</description>
+  </groupbox>
+</vbox>

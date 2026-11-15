@@ -1,6 +1,6 @@
 # Citation Map for Zotero
 
-![Version](https://img.shields.io/badge/version-1.10.0-blue)
+![Version](https://img.shields.io/badge/version-2.0.0-blue)
 ![Zotero 7–10](https://img.shields.io/badge/Zotero-7%20%7C%208%20%7C%209%20%7C%2010-CC2936)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
@@ -8,10 +8,16 @@ An interactive citation network for your Zotero collections. Instead of a flat
 list of papers, you get a living map: every paper is a dot, every citation is
 an arrow, and the plugin tells you which important papers you are missing.
 
-Works with **Zotero 7, 8, 9, and 10**.
+Works with **Zotero 7, 8, 9, and 10**, in light and dark mode.
 
-![Concept: ivory dots are your papers, amber dots are suggestions, teal threads are citation chains]
-<!-- NOTE: keep your existing screenshot/image line here, the path was not visible when regenerating this file -->
+![Citation Map: a Timeline of a collection, with one paper selected. Its references are drawn in blue, the newer papers citing it in pink, and its details open in the sidebar.](zotero-citation-map/docs/screenshots/hero-light.webp)
+
+<p align="center">
+  <img src="zotero-citation-map/docs/screenshots/dark-suggest.webp" width="49%" alt="Dark mode: hovering a paper shows its links; the Suggested tab lists papers several of yours cite but you don't have yet">
+  <img src="zotero-citation-map/docs/screenshots/network-chain.webp" width="49%" alt="Network view: papers that cite each other form islands; a citation chain is lit up as a numbered teal thread">
+</p>
+
+<sub>Screenshots show an example collection; citation counts are illustrative.</sub>
 
 ## ⬇️ Download & install
 
@@ -39,15 +45,22 @@ more it is cited (worldwide, log scale), so the classics sit top-left and
 fresh work bottom-right. Node size shows how often a paper is cited *within
 your own collection*. Hover or click a paper and its links light up:
 **blue** lines go to the papers it cites, **pink** lines come from the papers
-citing it; the details card lists both, so you can walk the trail. One click
-switches to the **Network**, where papers that cite each other form
-topic-labelled islands. The map remembers which view you used last.
+citing it. Its details open in the sidebar, with both lists, so you can walk
+the trail. One click switches to the **Network**, where papers that cite each
+other form topic-labelled islands. The map remembers which view you used last.
+
+**Colour always means the same thing.** Filled dots are papers in your
+library, open rings are papers you don't have yet; **orange** marks
+suggestions, **violet** search results, **teal** citation chains, **blue**
+"cites", **pink** "cited by" and **green** what is new. The interface follows
+Zotero's light or dark colour scheme, or stays pinned to one (Display →
+Appearance).
 
 **2. Discovers papers you should probably read.**
 The plugin reads the full reference list of every paper in the collection
 (via the open OpenAlex index). When several of your papers all cite the same
-*external* work you don't have, it appears on the map as an amber dot with a
-`×N` badge ("cited by N of your papers"). One click adds it to your Zotero
+*external* work you don't have, it appears on the map as an open orange ring
+and in the **Suggested** tab with a `×N` badge ("cited by N of your papers"). One click adds it to your Zotero
 collection via its DOI. Suggestions are ranked by *both* how many of your
 papers cite them and how well their topics match your collection, so a
 relevant paper outranks a generically famous methods paper.
@@ -67,60 +80,66 @@ citations); Discover is a live web search for papers *beyond* your library:
   papers at all.
 - **Related**, works OpenAlex marks as related to several of your papers.
 
-Every result explains itself with reason chips ("cites 3 of yours", topic
-tags, "related ×2") and offers **Add to Zotero** (with a "Show in library"
-shortcut afterwards) and **Show on map**, a violet ring you can just
-as easily **Remove from map** again (or clear all at once). The plugin also
-shows your collection's *fingerprint*, its aggregated topics as clickable
-chips, plus locally extracted key terms, so you can steer the search.
+Every result explains itself with reason badges ("cites 3 of yours", topic
+tags, "related ×2") and offers **Add** (to Zotero, with a "Show in library"
+shortcut afterwards) and **Show on map**, a violet ring you can just as
+easily take off the map again (or clear all at once). The plugin also shows
+your collection's *fingerprint*, its top OpenAlex topics as checkboxes, plus
+locally extracted key terms, so you can steer the search.
 
 **3. Traces citation chains.**
-Paper A cited Paper B, which cited Paper C… The sidebar lists the longest
-chains found in your collection; clicking one lights it up as an animated teal
-thread across the map, with the year span shown (e.g. `1998 → 2024`).
+Paper A cited Paper B, which cited Paper C… The **Chains** tab lists the
+longest chains found in your collection; clicking one lights it up as a teal
+thread across the map with numbered steps (1 = oldest), and the row lists
+every step with the year span (e.g. `2014 → 2023`).
 
 **4. Timeline: when, and how influential.**
 Each publication year is a column (empty years are skipped and marked ⋯, so
 a busy 2015–2025 isn't squashed by one old classic), and a paper's height is
-its citation count on a log axis with gridlines. **Display → Timeline
-height** switches the height to *cited on this map* (how many of the papers
-here cite it). Papers without a year get an "undated" column; papers without
+its citation count on a log axis with gridlines, starting at the lowest power
+of ten in use so well-cited collections use the whole height. **Display →
+Height means** switches to *cited on this map* (how many of the papers here
+cite it). Papers without a year get an "Undated" column; papers without
 citation data rest in a strip under the axis.
 
-**5. Recognises journals by their branding (opt-in).**
-Switch the **Display** popover to **Publisher** and each paper is tinted with
-its journal's own corporate identity, the dot's outline takes the
-publisher's brand colour and the journal name is shown in a matching
-logo-style typeface (Nature, Cell, The Lancet, IEEE, JAMA, PLOS, ACS, MDPI
-and ~20 more), so you can spot where a paper was published at a glance.
-Unknown journals keep a neutral style; no logos are downloaded, only colour
-and font cues. (By default dots are colored simply by *type*, see below.)
+**5. Recognises journals by their publisher's colour (opt-in).**
+Switch **Display → Color the dots by** to **Journal** and each paper gets a
+rim in its publisher's brand colour (Nature, Cell, The Lancet, IEEE, JAMA,
+PLOS, ACS, MDPI and ~20 more); journal names in the sidebar get a small
+square in the same colour. Colours are nudged so they stay visible on both
+the light and the dark background. Unknown journals keep a neutral style; no
+logos are downloaded. (By default dots are coloured simply by *type*.)
 See [Trademarks & affiliation](#trademarks--affiliation) below.
 
 **6. Display modes, filters & coupling links.**
-The **Display** popover switches what the dot colors encode: publisher
-branding (the classic look), publication **year** (blue → warm), citation
-**cluster** (one color per island, each island auto-labelled with the topic
-its papers share), or open-**access** status. It can also draw dashed
-*bibliographic-coupling* links between two of your papers that share many
-references, "siblings" even when neither cites the other. The **Filter**
-popover dims papers outside a year range or a chosen Zotero tag. A **Hide
-reviews** toggle in the toolbar de-emphasises review / meta-analysis
-articles so you can focus on primary research: they are hidden from the map,
-and in the Suggested, Discover and My papers lists they are kept but greyed
-out and italicised (with a "review" flag) so you never lose track of them.
+The **Display** popover switches what the dot colours encode: **type**
+(default), publication **year**, citation **cluster** (one colour per island,
+each island auto-labelled with the topic its papers share), **open access**
+status, or **journal**. It also holds the timeline height, spacing and line
+thickness, the scrolling behaviour and the appearance (Auto / Light / Dark),
+and can draw dashed *bibliographic-coupling* links between two of your
+papers that share many references, "siblings" even when neither cites the
+other. **Filter** dims papers outside a year range or a chosen Zotero tag.
+The **Hide reviews** toggle in the toolbar takes review / meta-analysis
+articles off the map so you can focus on primary research; in the lists they
+stay visible but faded, with a Review badge. Active filters appear as
+removable chips under the toolbar, with a "Showing 32 of 42 papers" count.
 Reviews are detected from OpenAlex's work type, telltale titles (systematic
 review, meta-analysis, …) and review-journal names (Nature Reviews, Annual
 Review of …, Trends in …).
 
+![Dark mode with active filters as chips, and the Display popover](zotero-citation-map/docs/screenshots/display.webp)
+
 **7. Shows what changed.**
 Rebuilding a collection you've mapped before highlights everything new
-since the last build: a gold ★ on the map, a NEW chip in the sidebar.
+since the last build: a small green dot on the map, a New badge in the
+sidebar.
 
-Also included: full-text search across titles/authors, a details panel with
-venue/author/citation stats and topic chips, "Show in library" and
-"Open DOI" shortcuts, PNG and JSON export, and a local cache so rebuilding
-a map is instant.
+Also included: search across titles and authors, paper details with
+citation stats, topics, links and your Zotero notes, "Show in library" and
+"Open DOI" shortcuts, PNG export (also on a light background for slides)
+and JSON export, keyboard shortcuts, and a local cache so rebuilding a map
+is instant.
 
 ## Usage
 
@@ -129,16 +148,17 @@ a map is instant.
 - With no collection selected, the whole library is mapped.
 - If the collection has **subcollections**, the map asks once which of them to
   include (all, only the top collection, or any mix). Your choice is
-  remembered per collection and can be changed anytime from the
-  **Subfolders** control in the toolbar.
+  remembered per collection and can be changed anytime by clicking the
+  collection's name at the left of the toolbar (the `+N` badge shows how many
+  subfolders are included).
 - First run fetches reference lists from OpenAlex (a few seconds per 50
   papers). Results are cached in `citation-map-cache.json` in your Zotero
   data directory; later runs are nearly instant.
 - On **Zotero 10** you can select several collections (Ctrl/Cmd-click) and
   map them together. A saved search, *Unfiled Items* or *Duplicates* maps
   exactly the items it shows.
-- **Import/export:** save a map with **More ▾ → Export JSON**, and reopen it
-  with **More ▾ → Import JSON** (or **Tools → Import Citation Map
+- **Import/export:** save a map with **More (⋯) → Export JSON**, and reopen it
+  with **More → Import JSON** (or **Tools → Import Citation Map
   (JSON)…**), no re-fetching. On import you can optionally
   create a new Zotero collection (placed anywhere you pick in the
   library/collection tree) and add the map's papers to your library by DOI.
@@ -149,31 +169,39 @@ a map is instant.
 | -------------------- | ------------------------------------------------------------------ |
 | Timeline: left → right | Publication year (oldest left)                                   |
 | Timeline: height     | Citations worldwide, log scale (or: cited on this map, see Display) |
-| Filled ivory dot     | Paper in your library                                              |
-| Open amber ring      | Suggested paper (cited by ≥ N of your papers, not in your library) |
+| Filled dot           | Paper in your library                                              |
+| Open orange ring     | Suggested paper (cited by ≥ N of your papers, not in your library) |
 | Open violet ring     | Paper found by the Discover search (e.g. it cites your papers)     |
 | Grey dot             | In your library, but no DOI / not found in OpenAlex                |
 | Arrow                | Points from the citing paper to the cited paper                    |
 | Blue / pink lines    | With a paper focused: what it cites / what cites it               |
-| Teal dashed thread   | A selected citation chain                                          |
-| Violet dashed line   | Coupling: two papers sharing many references (optional layer)      |
-| Gold ★ on a dot      | New since the last build of this collection                        |
+| Teal dashed thread   | A selected citation chain, numbered from the oldest paper          |
+| Grey dashed line     | Coupling: two papers sharing many references (optional layer)      |
+| Small green dot      | New since the last build of this collection                        |
 | Dot size             | How often the paper is cited within this collection                |
-| Coloured dot outline | The journal's publisher brand colour (e.g. IEEE blue, Lancet red)  |
-| Muted island caption | The topic the papers of that cluster share                         |
+| Coloured dot rim     | Journal mode: the publisher's colour (e.g. IEEE blue, Lancet red)  |
+| Muted island caption | Network: the topic the papers of that cluster share                |
 
-The dot *fill* colors follow the **Display** mode: by type (default),
-publisher branding, publication year, citation cluster, or open-access
-status, the toolbar legend always shows the active meaning. A one-line key
-in the map's bottom-left corner always says what position and size mean in
-the current view.
+The dot *fill* colours follow the **Display** mode (type, year, cluster,
+open access or journal); the legend under the map always shows the active
+meaning, and hovering a legend entry explains it.
 
 ### Controls
 
-Scroll = zoom · drag background = pan · drag a dot = pin it (Network only;
-switching views releases it) · click = select · double-click = open in
-library / on doi.org. Spacing and line thickness are under **Display**;
-export, import and the OpenAlex API key under **More ▾**.
+- **Trackpad:** slide two fingers to move the map, pinch to zoom.
+- **Mouse:** scroll to zoom toward the pointer, drag the background to pan.
+  (Display → Scrolling over the map switches between *Auto*, *Zooms* and
+  *Moves* if your device needs it; Ctrl/Cmd + scroll always zooms.)
+- **Click** a paper for its details · **double-click** it to zoom to it and
+  its links · double-click the background to fit everything · in the
+  Network, **drag** a paper to pin it (switching views releases it).
+- **Keys:** ⌘F / Ctrl+F search · T / N Timeline / Network · + − 0 zoom and
+  fit · arrow keys move between papers (click the map first) · Enter opens
+  one · A adds the focused suggestion · 1–4 switch tabs · S shows or hides
+  the sidebar · Esc closes · ? lists all shortcuts.
+
+Spacing, line thickness and appearance are under **Display**; export, import
+and the OpenAlex API key under **More (⋯)**.
 
 ## Configuration
 
@@ -188,14 +216,16 @@ Settings live under `extensions.citation-map.*` in
 | `subScopes`             | `{}`    | Remembered per-collection subcollection choice (managed by the picker)            |
 | `minChainLength`        | `3`     | Min. papers in a highlighted chain                                                |
 | `cacheDays`             | `30`    | Days before cached API data is refreshed                                          |
-| `apiKey`                | `""`    | Optional free [OpenAlex API key](https://openalex.org/settings/api): raises OpenAlex's daily budget about tenfold (also under **More ▾ → OpenAlex API key…**). See [Privacy](#privacy). |
+| `apiKey`                | `""`    | Optional free [OpenAlex API key](https://openalex.org/settings/api): raises OpenAlex's daily budget about tenfold (also under **More → OpenAlex API key…**). See [Privacy](#privacy). |
 | `layoutMode`            | `"timeline"` | Which view the map opens in: `timeline` or `force` (Network); remembered from the toolbar toggle |
 | `timelineMetric`        | `"global"` | Timeline height: `global` (citations worldwide) or `local` (cited on this map) |
 | `mailto`                | `""`    | Legacy OpenAlex "polite pool" e-mail (OpenAlex now uses API keys instead). Only sent if you set it. |
-| `journalBranding`       | `true`  | Tint papers with their journal's publisher brand colour and logo-style font       |
+| `appearance`            | `"auto"` | `auto` (follow Zotero's colour scheme), `light` or `dark` (also Display → Appearance and Zotero Settings → Citation Map) |
+| `scrollGesture`         | `"auto"` | What scrolling over the map does: `auto` (trackpad moves, mouse wheel zooms), `zoom` or `pan` |
+| `journalBranding`       | `true`  | Recognise publishers from journal names (used by the Journal colour mode)         |
 | `colorMode`             | `"kind"` | What the dot colors encode: `kind` (default, by paper type), `publisher` (color by journal), `year`, `cluster` or `oa` (also in the Display popover) |
-| `hideReviews`           | `false` | Hide review / meta-analysis articles from the map and all lists (also the toolbar "Hide reviews" toggle) |
-| `sidebarWidth` / `sidebarCollapsed` | `320` / `false` | Sidebar width in px and collapsed state (drag the divider / click the chevron on the map) |
+| `hideReviews`           | `false` | Hide review / meta-analysis articles from the map and fade them in the lists (also the toolbar "Hide reviews" toggle) |
+| `sidebarWidth` / `sidebarCollapsed` | `340` / `false` | Sidebar width in px (280–520) and hidden state (drag the divider; S or More → Hide sidebar) |
 | `discoverSince`         | `"any"` | Remembered Discover time filter (`any`, `2y`, `5y`, `10y`, or a 4-digit year) |
 | `showCoupling`          | `false` | Draw dashed bibliographic-coupling links between papers sharing references       |
 | `couplingMinShared`     | `3`     | Shared references needed before two papers count as coupled                       |
@@ -228,8 +258,8 @@ papers' records), for well-cited works in your top topic IDs, and for the
 metadata of tallied related works, transmitting only OpenAlex
 identifiers, never your text.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the module layout,
-and [`docs/INSTALL.md`](docs/INSTALL.md) for a development setup
+See [`docs/ARCHITECTURE.md`](zotero-citation-map/docs/ARCHITECTURE.md) for the module layout
+and the design system, and [`docs/INSTALL.md`](zotero-citation-map/docs/INSTALL.md) for a development setup
 (running the plugin from source with hot reload of your edits).
 
 ## Building from source
@@ -237,7 +267,7 @@ and [`docs/INSTALL.md`](docs/INSTALL.md) for a development setup
 ```bash
 git clone https://github.com/schulzedaniel/ZoteroCitationMaps.git
 cd ZoteroCitationMaps/zotero-citation-map   # the plugin lives in this subfolder
-./scripts/build.sh                          # → build/citation-map-1.10.0.xpi
+./scripts/build.sh                          # → build/citation-map-2.0.0.xpi
 ```
 
 No Node.js, no bundler, no dependencies, the plugin is plain JavaScript.
@@ -306,7 +336,7 @@ contact the author via the
 ## Disclaimer & liability
 
 This is free, open-source software provided under the MIT License **"as is",
-without warranty of any kind** (see [LICENSE](LICENSE)). To the extent
+without warranty of any kind** (see [LICENSE](zotero-citation-map/LICENSE)). To the extent
 permitted by applicable law, the author accepts no liability for damages
 arising from the use of this software; nothing in this section excludes or
 limits liability that cannot be excluded under applicable law (e.g. liability
@@ -333,10 +363,10 @@ Practical notes:
 - The plugin is likewise **not affiliated with or endorsed by OpenAlex /
   OurResearch**. OpenAlex is used as a public data source; its metadata is
   released under CC0.
-- Journal and publisher names shown by the *journal branding* feature
+- Journal and publisher names recognised by the *Journal* colour mode
   (e.g. Nature, Cell, The Lancet, IEEE, JAMA, PLOS, ACS, MDPI) are
-  trademarks of their respective owners. The feature uses generic colour and
-  typeface cues **solely to identify the venue a paper was published in**
+  trademarks of their respective owners. The feature uses generic colour
+  cues **solely to identify the venue a paper was published in**
   (nominative/descriptive use). No logos are used or downloaded, and no
   affiliation with or endorsement by any publisher is implied. The feature
   can be disabled via the `journalBranding` setting.
@@ -368,8 +398,8 @@ unambiguous for everyone.
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for the full version history
-(current release: **1.10.0**).
+See [CHANGELOG.md](zotero-citation-map/CHANGELOG.md) for the full version history
+(current release: **2.0.0**).
 
 ## Author
 
@@ -380,7 +410,11 @@ requests are welcome on the
 
 ## License
 
-MIT © 2026 Daniel Schulze, see [LICENSE](LICENSE).
+MIT © 2026 Daniel Schulze, see [LICENSE](zotero-citation-map/LICENSE).
+
+The bundled typeface [Inter](https://rsms.me/inter/) is © The Inter Project
+Authors and licensed under the
+[SIL Open Font License 1.1](zotero-citation-map/addon/content/styles/fonts/OFL.txt).
 
 Data retrieved from [OpenAlex](https://openalex.org) is available under
 [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Thanks to the

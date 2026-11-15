@@ -1,16 +1,16 @@
-<!-- Citation Map toolbar icon: a small citation network (4 nodes, 4 edges).
-     Uses context-fill so it inherits Zotero's toolbar icon color. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <g stroke="context-fill" stroke-width="1.2" fill="none" stroke-linecap="round">
-    <path d="M3.4 4.2 12 3.2"/>
-    <path d="M3.4 4.2 4.8 12.2"/>
-    <path d="M12 3.2 12.8 11.6"/>
-    <path d="M4.8 12.2 12.8 11.6"/>
-  </g>
-  <g fill="context-fill">
-    <circle cx="3.4" cy="4.2" r="2.1"/>
-    <circle cx="12" cy="3.2" r="1.7"/>
-    <circle cx="4.8" cy="12.2" r="1.7"/>
-    <circle cx="12.8" cy="11.6" r="1.7"/>
-  </g>
+<!-- Citation Map toolbar icon (16px): the brand mark in one colour. A focused
+     paper in the centre linked to the older papers it cites and the newer
+     ones citing it, one of them a suggestion (open ring). Every shape is a
+     fill in context-fill, so the icon adopts Zotero's toolbar colour in both
+     themes. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="context-fill" fill-opacity="context-fill-opacity">
+  <path d="M7.6 7.87L2.6 12.37L3.2 13.03L8.2 8.53Z"/>
+  <path d="M8.19 7.86L3.59 3.96L3.01 4.64L7.61 8.54Z"/>
+  <path d="M7.64 8.57L12.84 12.27L13.36 11.53L8.16 7.83Z"/>
+  <path d="M8.22 8.51L11.75 4.83L11.1 4.21L7.58 7.89Z"/>
+  <circle cx="7.9" cy="8.2" r="1.9"/>
+  <circle cx="2.9" cy="12.7" r="1.7"/>
+  <circle cx="3.3" cy="4.3" r="1.35"/>
+  <circle cx="13.1" cy="11.9" r="1.45"/>
+  <path fill-rule="evenodd" d="M10.75 3.4a1.75 1.75 0 1 0 3.5 0a1.75 1.75 0 1 0 -3.5 0ZM11.7 3.4a0.8 0.8 0 1 0 1.6 0a0.8 0.8 0 1 0 -1.6 0Z"/>
 </svg>

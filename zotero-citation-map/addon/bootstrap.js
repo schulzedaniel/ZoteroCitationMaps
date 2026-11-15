@@ -15,7 +15,7 @@ var CitationMap; // namespace object populated by the loaded modules
 // distinct string is how we can confirm (in Debug Output and in the map's
 // status bar) that the CURRENTLY RUNNING code is the latest build and not a
 // stale copy Zotero kept from an earlier same-version install.
-var CITMAP_BUILD = "2026-11-08-zotero10-timeline";
+var CITMAP_BUILD = "2026-11-15-v2.0.0";
 
 function log(msg) {
   Zotero.debug("[Citation Map] " + msg);
@@ -43,6 +43,8 @@ async function startup({ id, version, rootURI }) {
   loadModule(rootURI, "modules/dataSource.js", CitationMap);
   loadModule(rootURI, "modules/publisherCI.js", CitationMap);
   loadModule(rootURI, "modules/graphBuilder.js", CitationMap);
+  loadModule(rootURI, "modules/mapTheme.js", CitationMap);
+  loadModule(rootURI, "modules/icons.js", CitationMap);
   loadModule(rootURI, "modules/graphView.js", CitationMap);
   loadModule(rootURI, "modules/citationMap.js", CitationMap);
 

@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.0.0
+
+**A new, lighter look that feels at home in Zotero.** Citation Map 2.0 drops the dark "observatory" theme for a clean, structured design that follows Zotero's light or dark colour scheme automatically, or stays pinned to Light or Dark (Display → Appearance, or Zotero Settings → Citation Map). Every feature is still there; it is just easier to read.
+
+![The Timeline in light mode with a paper selected: its references in blue, the papers citing it in pink, its details in the sidebar](https://raw.githubusercontent.com/schulzedaniel/ZoteroCitationMaps/v2.0.0/zotero-citation-map/docs/screenshots/hero-light.webp)
+
+**Colour means something.** The interface itself is monochrome; colour is reserved for what things *are*, and each colour means one thing everywhere, in the map, the sidebar, badges and legend: orange = suggestions, violet = search results, teal = citation chains, blue = "cites", pink = "cited by", green = new since the last build. Shape carries meaning too (filled dot = in your library, open ring = not yet), so the map still reads for colour-blind users. All text meets WCAG AA contrast in both themes, and the plugin ships its own typeface (Inter, OFL-licensed) with tabular figures for years and counts.
+
+![Dark mode: hovering a paper shows its links and a summary; the Suggested tab lists papers several of yours cite](https://raw.githubusercontent.com/schulzedaniel/ZoteroCitationMaps/v2.0.0/zotero-citation-map/docs/screenshots/dark-suggest.webp)
+
+**A calmer layout.**
+- **One toolbar row** that never wraps: the collection (click it to choose subfolders, which used to be a separate button), Timeline / Network, search, a prominent **Hide reviews** toggle, Filter, Display, Rebuild and More. It adapts to narrow tabs.
+- **Paper details open in the sidebar** instead of a card floating over the map: key numbers, two buttons that frame the paper's references or the papers citing it, its links as clickable lists, actions and your notes. Back returns to the list; the arrows step through it.
+- **Visible filters:** while a filter is active, removable chips appear under the toolbar, with "Showing 32 of 42 papers".
+- **The legend moved under the map**, so it never covers the chart, and follows the colour mode.
+- **Sidebar tabs with icons and counts** (Suggested, Discover, Chains, Mine); drag the divider to resize, press **S** to hide it.
+- A status bar with the counts and a **Shortcuts** list.
+
+![Network view with a citation chain lit up as a numbered teal thread](https://raw.githubusercontent.com/schulzedaniel/ZoteroCitationMaps/v2.0.0/zotero-citation-map/docs/screenshots/network-chain.webp)
+
+**Easier to get around.**
+- **Trackpad gestures:** slide two fingers to move the map in any direction, pinch to zoom (on macOS and on Windows precision touchpads). A mouse wheel still zooms; Display → Scrolling over the map changes the behaviour if your device needs it.
+- **Keyboard shortcuts:** ⌘F / Ctrl+F search, T / N switch views, + − 0 zoom and fit, arrow keys walk between papers, Enter opens one, A adds a suggestion, 1–4 switch tabs, S toggles the sidebar, ? shows the list.
+- Double-clicking a paper now **zooms to it and its links** (Show in library / Open DOI are in its details).
+- The map **opens properly framed**, even when Zotero sizes the tab a moment later (it could open tiny), and the Timeline's citation axis starts at the lowest power of ten in use, so a collection of well-cited papers uses the whole height.
+
+![Dark mode with active filters as chips and the Display popover: colour modes, timeline height, sizes, scrolling and appearance](https://raw.githubusercontent.com/schulzedaniel/ZoteroCitationMaps/v2.0.0/zotero-citation-map/docs/screenshots/display.webp)
+
+**Also new:** a refreshed tour (six short steps) and a "What's new" walkthrough for upgraders, a new logo and toolbar icon, a restyled build screen and dialogs, journal colours that stay legible on both backgrounds, a dashed ring for "open-access status unknown", and a light-background PNG export for slides and print.
+
+*Screenshots show an example collection; citation counts are illustrative.*
+
 ## 1.10.0
 
 **Works with Zotero 10.** Zotero 10 disabled 1.9.0 (its version cap was 9.x), and its multi-select collections pane made the map fail to open whenever several collections were selected. The plugin now uses the new selection API where it exists (and the old one on Zotero 7–9), and multi-selection became a feature: select several collections and map them together. A saved search, *Unfiled Items* or *Duplicates* now maps exactly the items it shows (it used to map the whole library), group libraries are named correctly, the trash and feeds are refused with a clear message, and the collection context-menu label follows the selection.
