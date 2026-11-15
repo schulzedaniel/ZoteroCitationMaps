@@ -3,15 +3,10 @@
     "citation-map@daniel.dev": {
       "updates": [
         {
-          "version": "1.10.0",
-          "update_link": "https://github.com/schulzedaniel/ZoteroCitationMaps/releases/download/v1.10.0/citation-map-1.10.0.xpi",
-          "update_hash": "sha256:5f87ae8696cc25c934063733b405f35b278b460f4a1536e9bec69bfdd4ccef6e",
-          "applications": {
-            "zotero": {
-              "strict_min_version": "7.0",
-              "strict_max_version": "10.*"
-            }
-          }
+          "version": "2.0.0",
+          "update_link": "https://github.com/schulzedaniel/ZoteroCitationMaps/releases/download/v2.0.0/citation-map-2.0.0.xpi",
+          "update_hash": "sha256:21e06d44b246fc4795c029e1c959082a9c6d9cfd3180b755f3c139df77ff6ac6",
+          "applications": { "zotero": { "strict_min_version": "7.0", "strict_max_version": "10.*" } }
         }
       ]
     }
